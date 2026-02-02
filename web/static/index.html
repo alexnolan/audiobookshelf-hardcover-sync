@@ -23,9 +23,27 @@
 
         <nav class="tabs">
             <button class="tab-button active" onclick="showTab('users')">Profiles</button>
+            <button class="tab-button" onclick="showTab('library')">Library</button>
             <button class="tab-button" onclick="showTab('sync')">Sync Status</button>
+            <button class="tab-button" onclick="showTab('book-logs')">Book Sync Logs</button>
             <button class="tab-button" onclick="showTab('add-user')">Add Profile</button>
         </nav>
+
+        <!-- Library Tab -->
+        <div id="library-tab" class="tab-content">
+            <!-- Library HTML will be loaded here dynamically -->
+            <div id="library-content">
+                <div class="section-header">
+                    <h2>Book Library</h2>
+                    <div class="header-controls">
+                        <select id="library-profile-select" onchange="libraryState.profileId = this.value; loadLibraryBooks()" style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
+                            <option value="">Select a Profile...</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="library-inner"></div>
+            </div>
+        </div>
 
         <!-- Users Tab -->
         <div id="users-tab" class="tab-content active">
@@ -61,7 +79,29 @@
             </div>
         </div>
 
-        <!-- Add User Tab -->
+        <!-- Book Sync Logs Tab -->
+        <div id="book-logs-tab" class="tab-content">
+            <div class="section-header">
+                <h2>Book Sync Logs</h2>
+                <div class="header-controls">
+                    <select id="profile-select" onchange="loadBookSyncLogs()" style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
+                        <option value="">Select a Profile...</option>
+                    </select>
+                    <select id="status-filter" onchange="loadBookSyncLogs()" style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc; margin-left: 0.5rem;">
+                        <option value="">All Statuses</option>
+                        <option value="SYNCED">Synced</option>
+                        <option value="SKIPPED">Skipped</option>
+                        <option value="ERROR">Errors</option>
+                        <option value="NOT_FOUND">Not Found</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="loadBookSyncLogs()" style="margin-left: 0.5rem;">🔄 Refresh</button>
+                </div>
+            </div>
+            
+            <div id="book-logs-container" class="book-logs-grid">
+                <!-- Book sync logs will be loaded here -->
+            </div>
+        </div>
         <div id="add-user-tab" class="tab-content">
             <div class="section-header">
                 <h2>Add New Sync Profile</h2>
@@ -98,6 +138,29 @@
 
                 <div class="form-section">
                     <h3>Sync Configuration</h3>
+                    
+                    <div class="form-group">
+                        <label for="conflict-resolution">Conflict Resolution Strategy:</label>
+                        <select id="conflict-resolution" name="conflict_resolution_mode">
+                            <option value="prefer_abs">Prefer AudiobookShelf Progress (default)</option>
+                            <option value="prefer_hardcover">Prefer Hardcover Progress</option>
+                            <option value="prefer_newest">Use Newest Progress</option>
+                            <option value="manual">Manual Review Required</option>
+                        </select>
+                        <small>How to resolve conflicts when progress differs between ABS and Hardcover</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="hc-refresh-interval">Hardcover Refresh Interval:</label>
+                        <select id="hc-refresh-interval" name="hc_refresh_interval">
+                            <option value="1h">Every Hour</option>
+                            <option value="6h">Every 6 Hours</option>
+                            <option value="12h">Every 12 Hours</option>
+                            <option value="24h">Every 24 Hours (default)</option>
+                            <option value="7d">Every 7 Days</option>
+                        </select>
+                        <small>How frequently to re-fetch books from Hardcover API</small>
+                    </div>
                     
                     <div class="form-group">
                         <label>
@@ -211,6 +274,29 @@
                     <h3>Sync Configuration</h3>
                     
                     <div class="form-group">
+                        <label for="edit-conflict-resolution">Conflict Resolution Strategy:</label>
+                        <select id="edit-conflict-resolution" name="conflict_resolution_mode">
+                            <option value="prefer_abs">Prefer AudiobookShelf Progress (default)</option>
+                            <option value="prefer_hardcover">Prefer Hardcover Progress</option>
+                            <option value="prefer_newest">Use Newest Progress</option>
+                            <option value="manual">Manual Review Required</option>
+                        </select>
+                        <small>How to resolve conflicts when progress differs between ABS and Hardcover</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit-hc-refresh-interval">Hardcover Refresh Interval:</label>
+                        <select id="edit-hc-refresh-interval" name="hc_refresh_interval">
+                            <option value="1h">Every Hour</option>
+                            <option value="6h">Every 6 Hours</option>
+                            <option value="12h">Every 12 Hours</option>
+                            <option value="24h">Every 24 Hours (default)</option>
+                            <option value="7d">Every 7 Days</option>
+                        </select>
+                        <small>How frequently to re-fetch books from Hardcover API</small>
+                    </div>
+                    
+                    <div class="form-group">
                         <label>
                             <input type="checkbox" id="edit-incremental" name="incremental">
                             Enable Incremental Sync
@@ -281,6 +367,89 @@
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Update Profile</button>
                     <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Per-Book Sync Configuration Modal -->
+    <div id="book-config-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Book Sync Settings</h3>
+                <button type="button" class="modal-close" onclick="closeBookConfigModal()">&times;</button>
+            </div>
+            <form id="book-config-form">
+                <input type="hidden" id="book-config-abs-id" name="absBookId">
+                <input type="hidden" id="book-config-profile-id" name="profileId">
+                
+                <div class="form-group">
+                    <h4 id="book-config-title">Loading...</h4>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="book-sync-enabled" name="sync_enabled" checked>
+                        Enable sync for this book
+                    </label>
+                    <small>Disable to skip this book in future syncs</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="book-conflict-mode">Override Conflict Resolution (optional):</label>
+                    <select id="book-conflict-mode" name="conflict_mode">
+                        <option value="">Use Profile Default</option>
+                        <option value="prefer_abs">Prefer AudiobookShelf Progress</option>
+                        <option value="prefer_hardcover">Prefer Hardcover Progress</option>
+                        <option value="prefer_newest">Use Newest Progress</option>
+                        <option value="manual">Manual Review Required</option>
+                    </select>
+                    <small>Leave blank to use profile's conflict resolution strategy</small>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeBookConfigModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Manual Book Mapping Modal -->
+    <div id="book-mapping-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Manual Book Mapping</h3>
+                <button type="button" class="modal-close" onclick="closeBookMappingModal()">&times;</button>
+            </div>
+            <form id="book-mapping-form">
+                <input type="hidden" id="mapping-abs-id" name="absBookId">
+                <input type="hidden" id="mapping-profile-id" name="profileId">
+                
+                <div class="form-group">
+                    <h4 id="mapping-book-title">AudiobookShelf Book: Loading...</h4>
+                </div>
+
+                <div class="form-group">
+                    <label for="mapping-hc-edition-id">Hardcover Edition ID:</label>
+                    <input type="text" id="mapping-hc-edition-id" name="hc_edition_id" placeholder="Enter Hardcover edition ID" required>
+                    <small>The numeric ID from Hardcover API (e.g., 12345678)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="mapping-confidence">Confidence Level (0-100%):</label>
+                    <input type="number" id="mapping-confidence" name="confidence" min="0" max="100" value="100">
+                    <small>Your confidence that this is the correct Hardcover edition</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="mapping-notes">Notes (optional):</label>
+                    <textarea id="mapping-notes" name="notes" rows="3" placeholder="Why did you match these books?" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font-family: inherit;"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Create Mapping</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeBookMappingModal()">Cancel</button>
                 </div>
             </form>
         </div>

@@ -1,0 +1,1012 @@
+<!-- Library UI Component for AudiobookShelf-Hardcover Sync -->
+<!-- Add to web/static/index.html in the main navigation -->
+
+<div id="library-tab" style="display: none;">
+    <div class="library-container">
+        <!-- Header Section -->
+        <div class="library-header">
+            <h2>Book Library</h2>
+            <div class="header-controls">
+                <button id="collect-abs-btn" class="btn btn-primary" onclick="collectABSBooks()">
+                    📚 Collect from ABS
+                </button>
+                <button id="collect-hc-btn" class="btn btn-primary" onclick="collectHardcoverBooks()">
+                    📖 Collect from Hardcover
+                </button>
+                <button id="sync-all-btn" class="btn btn-success" onclick="syncAllBooks()">
+                    🔄 Sync All Books
+                </button>
+            </div>
+        </div>
+
+        <!-- Summary Stats -->
+        <div id="sync-summary" class="summary-section">
+            <div class="stat-card">
+                <div class="stat-label">Total ABS Books</div>
+                <div class="stat-value" id="stat-total-abs">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Mapped Books</div>
+                <div class="stat-value" id="stat-mapped">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">In Sync</div>
+                <div class="stat-value" id="stat-in-sync">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Needs Sync</div>
+                <div class="stat-value alert" id="stat-needs-sync">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Unmapped</div>
+                <div class="stat-value" id="stat-unmapped">-</div>
+            </div>
+        </div>
+
+        <!-- Filters and Controls -->
+        <div class="library-filters">
+            <input type="text" id="search-input" class="search-box" placeholder="Search by title or author...">
+            <select id="filter-select" class="filter-select" onchange="applyFilter()">
+                <option value="">All Books</option>
+                <option value="in_sync">In Sync</option>
+                <option value="needs_sync">Needs Sync</option>
+                <option value="unmapped">Unmapped</option>
+                <option value="disabled">Sync Disabled</option>
+            </select>
+            <select id="sort-select" class="sort-select" onchange="changeSortOrder()">
+                <option value="title">Sort by Title</option>
+                <option value="progress_diff">Sort by Progress Diff</option>
+                <option value="last_updated">Sort by Last Updated</option>
+            </select>
+        </div>
+
+        <!-- Books Table -->
+        <div class="library-table-container">
+            <table class="library-table">
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Author</th>
+                        <th>ABS Progress</th>
+                        <th>HC Progress</th>
+                        <th>Diff</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="books-tbody">
+                    <tr class="loading">
+                        <td colspan="7">Loading books...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="pagination">
+            <button class="btn-pagination" id="prev-btn" onclick="previousPage()">← Previous</button>
+            <span id="page-info">Page 1</span>
+            <button class="btn-pagination" id="next-btn" onclick="nextPage()">Next →</button>
+        </div>
+
+        <!-- Book Detail Modal -->
+        <div id="book-detail-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="detail-title">Book Details</h3>
+                    <button class="btn-close" onclick="closeBookDetail()">×</button>
+                </div>
+                <div class="modal-body">
+                    <!-- Book Info -->
+                    <div class="book-detail-section">
+                        <h4>Book Information</h4>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label>Title</label>
+                                <div id="detail-title-val">-</div>
+                            </div>
+                            <div class="info-item">
+                                <label>Author</label>
+                                <div id="detail-author-val">-</div>
+                            </div>
+                            <div class="info-item">
+                                <label>ASIN</label>
+                                <div id="detail-asin-val">-</div>
+                            </div>
+                            <div class="info-item">
+                                <label>ISBN</label>
+                                <div id="detail-isbn-val">-</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Progress Comparison -->
+                    <div class="book-detail-section">
+                        <h4>Progress Comparison</h4>
+                        <div class="progress-comparison">
+                            <div class="progress-item">
+                                <label>AudiobookShelf</label>
+                                <div class="progress-bar">
+                                    <div id="progress-abs" class="progress-fill" style="width: 0%"></div>
+                                </div>
+                                <span id="progress-abs-text">0%</span>
+                            </div>
+                            <div class="progress-item">
+                                <label>Hardcover</label>
+                                <div class="progress-bar">
+                                    <div id="progress-hc" class="progress-fill" style="width: 0%"></div>
+                                </div>
+                                <span id="progress-hc-text">0%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sync Status -->
+                    <div class="book-detail-section">
+                        <h4>Sync Status</h4>
+                        <div id="sync-status-detail">-</div>
+                    </div>
+
+                    <!-- Progress History -->
+                    <div class="book-detail-section">
+                        <h4>Progress History (Last 10 entries)</h4>
+                        <div id="progress-history-list" class="history-list">
+                            <div class="loading-small">Loading...</div>
+                        </div>
+                    </div>
+
+                    <!-- Sync Events -->
+                    <div class="book-detail-section">
+                        <h4>Recent Sync Events</h4>
+                        <div id="sync-events-list" class="events-list">
+                            <div class="loading-small">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="closeBookDetail()">Close</button>
+                    <button class="btn btn-primary" id="sync-single-btn" onclick="syncSingleBookFromDetail()">
+                        🔄 Sync This Book
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.library-container {
+    padding: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.library-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    border-bottom: 2px solid #ddd;
+    padding-bottom: 15px;
+}
+
+.library-header h2 {
+    margin: 0;
+    color: #333;
+}
+
+.header-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.summary-section {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-bottom: 30px;
+}
+
+.stat-card {
+    background: #f5f5f5;
+    padding: 15px;
+    border-radius: 8px;
+    text-align: center;
+    border-left: 4px solid #007bff;
+}
+
+.stat-card.alert {
+    border-left-color: #dc3545;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-value {
+    font-size: 28px;
+    font-weight: bold;
+    color: #333;
+    margin-top: 5px;
+}
+
+.stat-value.alert {
+    color: #dc3545;
+}
+
+.library-filters {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.search-box,
+.filter-select,
+.sort-select {
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.search-box {
+    flex: 1;
+    min-width: 200px;
+}
+
+.filter-select,
+.sort-select {
+    min-width: 150px;
+}
+
+.library-table-container {
+    overflow-x: auto;
+    margin-bottom: 20px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.library-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+}
+
+.library-table thead {
+    background: #f8f9fa;
+    border-bottom: 2px solid #ddd;
+}
+
+.library-table th {
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #333;
+}
+
+.library-table td {
+    padding: 12px;
+    border-bottom: 1px solid #eee;
+}
+
+.library-table tbody tr:hover {
+    background: #f9f9f9;
+}
+
+.library-table tbody tr.loading td {
+    text-align: center;
+    color: #999;
+    padding: 30px;
+}
+
+.progress-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.progress-mini {
+    width: 80px;
+    height: 6px;
+    background: #eee;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-mini-fill {
+    height: 100%;
+    background: #007bff;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.status-badge.in-sync {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-badge.needs-sync {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.status-badge.unmapped {
+    background: #e2e3e5;
+    color: #383d41;
+}
+
+.status-badge.disabled {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.actions-cell {
+    display: flex;
+    gap: 5px;
+}
+
+.btn-small {
+    padding: 4px 8px;
+    font-size: 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    background: #007bff;
+    color: white;
+}
+
+.btn-small:hover {
+    background: #0056b3;
+}
+
+.btn-small.detail {
+    background: #17a2b8;
+}
+
+.btn-small.detail:hover {
+    background: #117a8b;
+}
+
+.btn-small.sync {
+    background: #28a745;
+}
+
+.btn-small.sync:hover {
+    background: #1e7e34;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.btn-pagination {
+    padding: 8px 16px;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-pagination:hover:not(:disabled) {
+    background: #f5f5f5;
+}
+
+.btn-pagination:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Modal Styles */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 8px;
+    max-width: 700px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 {
+    margin: 0;
+}
+
+.btn-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #999;
+}
+
+.btn-close:hover {
+    color: #333;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.book-detail-section {
+    margin-bottom: 25px;
+}
+
+.book-detail-section h4 {
+    margin: 0 0 12px 0;
+    color: #333;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 8px;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+}
+
+.info-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.info-item label {
+    font-weight: 600;
+    font-size: 12px;
+    color: #666;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+
+.info-item div {
+    font-size: 14px;
+    color: #333;
+    word-break: break-word;
+}
+
+.progress-comparison {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.progress-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.progress-item label {
+    font-weight: 600;
+    font-size: 12px;
+    color: #666;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 24px;
+    background: #eee;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid #ddd;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #007bff, #0056b3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.history-list,
+.events-list {
+    max-height: 250px;
+    overflow-y: auto;
+    border: 1px solid #eee;
+    border-radius: 4px;
+}
+
+.history-item,
+.event-item {
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+}
+
+.history-item:last-child,
+.event-item:last-child {
+    border-bottom: none;
+}
+
+.history-date,
+.event-date {
+    color: #999;
+    font-size: 12px;
+}
+
+.loading-small {
+    padding: 20px;
+    text-align: center;
+    color: #999;
+}
+
+.modal-footer {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    padding: 20px;
+    border-top: 1px solid #eee;
+}
+
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.btn-primary {
+    background: #007bff;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #0056b3;
+}
+
+.btn-success {
+    background: #28a745;
+    color: white;
+}
+
+.btn-success:hover {
+    background: #1e7e34;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+}
+</style>
+
+<script>
+// Global state for library UI
+let libraryState = {
+    currentPage: 1,
+    pageSize: 50,
+    filter: '',
+    sort: 'title',
+    searchQuery: '',
+    currentBookDetail: null,
+};
+
+// Load and display library books
+async function loadLibraryBooks() {
+    const profileId = getCurrentProfileId();
+    if (!profileId) return;
+
+    const tbody = document.getElementById('books-tbody');
+    tbody.innerHTML = '<tr class="loading"><td colspan="7">Loading books...</td></tr>';
+
+    try {
+        // Build query string
+        const params = new URLSearchParams({
+            page: libraryState.currentPage,
+            limit: libraryState.pageSize,
+        });
+
+        if (libraryState.filter) {
+            params.append('filter', libraryState.filter);
+        }
+
+        const response = await fetch(
+            `/api/profiles/${profileId}/books?${params.toString()}`,
+            {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error('Failed to load books');
+        }
+
+        const result = await response.json();
+        const books = result.data || [];
+        const pagination = result.pagination || {};
+
+        // Render books
+        tbody.innerHTML = '';
+        if (books.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 30px;">No books found</td></tr>';
+            return;
+        }
+
+        books.forEach((book, index) => {
+            const absProgress = (book.abs_book?.progress || 0) * 100;
+            const hcProgress = (book.hardcover_book?.progress || 0) * 100;
+            const diff = absProgress - hcProgress;
+
+            let statusClass = 'unmapped';
+            let statusText = 'Unmapped';
+
+            if (book.hardcover_book) {
+                if (book.in_sync) {
+                    statusClass = 'in-sync';
+                    statusText = 'In Sync';
+                } else {
+                    statusClass = 'needs-sync';
+                    statusText = 'Needs Sync';
+                }
+            } else if (book.config && !book.config.sync_enabled) {
+                statusClass = 'disabled';
+                statusText = 'Disabled';
+            }
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${escapeHtml(book.abs_book?.title || '-')}</td>
+                <td>${escapeHtml(book.abs_book?.author || '-')}</td>
+                <td>
+                    <div class="progress-cell">
+                        <div class="progress-mini">
+                            <div class="progress-mini-fill" style="width: ${absProgress}%"></div>
+                        </div>
+                        <span>${absProgress.toFixed(1)}%</span>
+                    </div>
+                </td>
+                <td>
+                    <div class="progress-cell">
+                        <div class="progress-mini">
+                            <div class="progress-mini-fill" style="width: ${hcProgress}%"></div>
+                        </div>
+                        <span>${hcProgress.toFixed(1)}%</span>
+                    </div>
+                </td>
+                <td>${Math.abs(diff).toFixed(1)}%</td>
+                <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                <td>
+                    <div class="actions-cell">
+                        <button class="btn-small detail" onclick="openBookDetail(${book.abs_book?.id}, event)">View</button>
+                        <button class="btn-small sync" onclick="syncSingleBook(${book.abs_book?.id}, event)">Sync</button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+
+        // Update pagination
+        updatePagination(pagination);
+        loadSyncSummary();
+
+    } catch (error) {
+        console.error('Error loading books:', error);
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: red;">Error loading books: ${error.message}</td></tr>`;
+    }
+}
+
+// Load and display sync summary
+async function loadSyncSummary() {
+    const profileId = getCurrentProfileId();
+    if (!profileId) return;
+
+    try {
+        const response = await fetch(`/api/profiles/${profileId}/sync-summary`);
+        if (!response.ok) throw new Error('Failed to load summary');
+
+        const summary = await response.json();
+
+        document.getElementById('stat-total-abs').textContent = summary.total_abs_books || 0;
+        document.getElementById('stat-mapped').textContent = summary.mapped_books || 0;
+        document.getElementById('stat-in-sync').textContent = summary.in_sync_books || 0;
+        document.getElementById('stat-needs-sync').textContent = summary.needs_sync_books || 0;
+        document.getElementById('stat-unmapped').textContent = summary.unmapped_books || 0;
+
+    } catch (error) {
+        console.error('Error loading sync summary:', error);
+    }
+}
+
+// Open book detail modal
+async function openBookDetail(bookId, event) {
+    event?.stopPropagation?.();
+    const profileId = getCurrentProfileId();
+
+    try {
+        const response = await fetch(`/api/profiles/${profileId}/books/${bookId}`);
+        if (!response.ok) throw new Error('Failed to load book details');
+
+        const bookDetail = await response.json();
+        libraryState.currentBookDetail = bookDetail;
+
+        // Populate modal
+        const book = bookDetail.book;
+        document.getElementById('detail-title').textContent = book.abs_book?.title || 'Book Details';
+        document.getElementById('detail-title-val').textContent = book.abs_book?.title || '-';
+        document.getElementById('detail-author-val').textContent = book.abs_book?.author || '-';
+        document.getElementById('detail-asin-val').textContent = book.abs_book?.asin || '-';
+        document.getElementById('detail-isbn-val').textContent = book.abs_book?.isbn || '-';
+
+        const absProgress = (book.abs_book?.progress || 0) * 100;
+        const hcProgress = (book.hardcover_book?.progress || 0) * 100;
+
+        document.getElementById('progress-abs').style.width = `${absProgress}%`;
+        document.getElementById('progress-abs-text').textContent = `${absProgress.toFixed(1)}%`;
+        document.getElementById('progress-hc').style.width = `${hcProgress}%`;
+        document.getElementById('progress-hc-text').textContent = `${hcProgress.toFixed(1)}%`;
+
+        let syncStatus = 'Unmapped';
+        if (book.hardcover_book) {
+            syncStatus = book.in_sync ? 'In Sync' : 'Needs Sync';
+        } else if (book.config && !book.config.sync_enabled) {
+            syncStatus = 'Sync Disabled';
+        }
+        document.getElementById('sync-status-detail').textContent = syncStatus;
+
+        // Render progress history
+        const historyList = document.getElementById('progress-history-list');
+        if (bookDetail.progress_history && bookDetail.progress_history.length > 0) {
+            historyList.innerHTML = bookDetail.progress_history.slice(0, 10).map(h => `
+                <div class="history-item">
+                    <div>
+                        <strong>${(h.progress * 100).toFixed(1)}%</strong>
+                        from ${h.source}
+                    </div>
+                    <div class="history-date">${new Date(h.recorded_at).toLocaleDateString()}</div>
+                </div>
+            `).join('');
+        } else {
+            historyList.innerHTML = '<div class="loading-small">No history</div>';
+        }
+
+        // Render sync events
+        const eventsList = document.getElementById('sync-events-list');
+        if (bookDetail.sync_events && bookDetail.sync_events.length > 0) {
+            eventsList.innerHTML = bookDetail.sync_events.slice(0, 10).map(e => `
+                <div class="event-item">
+                    <div>
+                        <strong>${e.event_type}</strong>: ${(e.new_progress * 100).toFixed(1) || 'N/A'}%
+                    </div>
+                    <div class="event-date">${new Date(e.created_at).toLocaleDateString()}</div>
+                </div>
+            `).join('');
+        } else {
+            eventsList.innerHTML = '<div class="loading-small">No events</div>';
+        }
+
+        document.getElementById('book-detail-modal').style.display = 'flex';
+
+    } catch (error) {
+        console.error('Error loading book details:', error);
+        showNotification('Error loading book details', 'error');
+    }
+}
+
+// Close book detail modal
+function closeBookDetail() {
+    document.getElementById('book-detail-modal').style.display = 'none';
+}
+
+// Sync single book
+async function syncSingleBook(bookId, event) {
+    event?.stopPropagation?.();
+    const profileId = getCurrentProfileId();
+
+    try {
+        const response = await fetch(`/api/profiles/${profileId}/books/${bookId}/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dry_run: false, force: false }),
+        });
+
+        if (!response.ok) throw new Error('Failed to sync book');
+
+        const result = await response.json();
+        showNotification('Book synced successfully', 'success');
+        loadLibraryBooks();
+
+    } catch (error) {
+        console.error('Error syncing book:', error);
+        showNotification(`Error syncing book: ${error.message}`, 'error');
+    }
+}
+
+// Sync single book from detail modal
+function syncSingleBookFromDetail() {
+    if (libraryState.currentBookDetail?.book?.abs_book?.id) {
+        syncSingleBook(libraryState.currentBookDetail.book.abs_book.id);
+    }
+}
+
+// Sync all books
+async function syncAllBooks() {
+    if (!confirm('Are you sure you want to sync all books?')) return;
+
+    const profileId = getCurrentProfileId();
+    const btn = document.getElementById('sync-all-btn');
+    btn.disabled = true;
+    btn.textContent = '🔄 Syncing...';
+
+    try {
+        const response = await fetch(`/api/profiles/${profileId}/books/sync-batch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ book_ids: [], dry_run: false, force: false }),
+        });
+
+        if (!response.ok) throw new Error('Failed to sync batch');
+
+        showNotification('All books synced successfully', 'success');
+        loadLibraryBooks();
+
+    } catch (error) {
+        console.error('Error syncing batch:', error);
+        showNotification(`Error syncing batch: ${error.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Sync All Books';
+    }
+}
+
+// Collect ABS books
+async function collectABSBooks() {
+    const profileId = getCurrentProfileId();
+    const btn = document.getElementById('collect-abs-btn');
+    btn.disabled = true;
+    btn.textContent = '📚 Collecting...';
+
+    try {
+        const response = await fetch(`/api/profiles/${profileId}/collect/abs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (!response.ok) throw new Error('Failed to collect ABS books');
+
+        showNotification('ABS books collected successfully', 'success');
+        loadLibraryBooks();
+
+    } catch (error) {
+        console.error('Error collecting ABS books:', error);
+        showNotification(`Error collecting ABS books: ${error.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📚 Collect from ABS';
+    }
+}
+
+// Collect Hardcover books
+async function collectHardcoverBooks() {
+    const profileId = getCurrentProfileId();
+    const btn = document.getElementById('collect-hc-btn');
+    btn.disabled = true;
+    btn.textContent = '📖 Collecting...';
+
+    try {
+        const response = await fetch(`/api/profiles/${profileId}/collect/hardcover`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (!response.ok) throw new Error('Failed to collect Hardcover books');
+
+        showNotification('Hardcover books collected successfully', 'success');
+        loadLibraryBooks();
+
+    } catch (error) {
+        console.error('Error collecting Hardcover books:', error);
+        showNotification(`Error collecting Hardcover books: ${error.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📖 Collect from Hardcover';
+    }
+}
+
+// Apply filter
+function applyFilter() {
+    libraryState.filter = document.getElementById('filter-select').value;
+    libraryState.currentPage = 1;
+    loadLibraryBooks();
+}
+
+// Change sort order
+function changeSortOrder() {
+    libraryState.sort = document.getElementById('sort-select').value;
+    loadLibraryBooks();
+}
+
+// Pagination
+function previousPage() {
+    if (libraryState.currentPage > 1) {
+        libraryState.currentPage--;
+        loadLibraryBooks();
+    }
+}
+
+function nextPage() {
+    libraryState.currentPage++;
+    loadLibraryBooks();
+}
+
+function updatePagination(pagination) {
+    const prevBtn = document.getElementById('prev-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const pageInfo = document.getElementById('page-info');
+
+    prevBtn.disabled = pagination.page <= 1;
+    nextBtn.disabled = pagination.page >= pagination.total_pages;
+    pageInfo.textContent = `Page ${pagination.page} of ${pagination.total_pages}`;
+}
+
+// Utilities
+function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;',
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+// Initialize library tab
+function initializeLibraryTab() {
+    const libraryTab = document.getElementById('library-tab');
+    if (libraryTab) {
+        loadLibraryBooks();
+    }
+}
+
+// Hook into tab switching (add to existing switchTab function)
+// When "Library" tab is selected, call initializeLibraryTab()
+</script>

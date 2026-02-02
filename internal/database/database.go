@@ -65,9 +65,17 @@ func (d *Database) migrate() error {
 		&SyncProfile{},
 		&SyncProfileConfig{},
 		&ProfileSyncState{},
+		&BookSyncLog{},
 		&auth.AuthUser{},
 		&auth.AuthSession{},
 		&auth.AuthProvider{},
+		// New book library rearchitecture models
+		&ABSBook{},
+		&HardcoverUserBook{},
+		&BookMapping{},
+		&ProgressHistory{},
+		&SyncEvent{},
+		&BookSyncConfig{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to auto-migrate: %w", err)

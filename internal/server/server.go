@@ -78,6 +78,8 @@ func New(addr string, multiUserService *multiuser.MultiUserService, authService 
 	apiMux.HandleFunc("POST /profiles/{id}/sync", s.handleAPIProfilesWithID)
 	apiMux.HandleFunc("DELETE /profiles/{id}/sync", s.handleAPIProfilesWithID)
 	apiMux.HandleFunc("GET /profiles/{id}/summary", s.handleAPISummary)  // Add summary endpoint
+	apiMux.HandleFunc("GET /profiles/{id}/book-syncs", s.handleAPIBookSyncLogs)  // Book sync logs endpoint
+	apiMux.HandleFunc("GET /profiles/{id}/book-syncs/{audiobookId}", s.handleAPIBookSyncLog)  // Single book sync log
 
 	// Mount API routes under /api with auth middleware
 	handler.Handle("/api/", s.authMiddleware.RequireAuth(http.StripPrefix("/api", apiMux)))
@@ -426,3 +428,14 @@ func (s *Server) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 	// Serve the file
 	http.ServeFile(w, r, fullPath)
 }
+
+// handleAPIBookSyncLogs wraps the handler
+func (s *Server) handleAPIBookSyncLogs(w http.ResponseWriter, r *http.Request) {
+	s.apiHandler.GetBookSyncLogs(w, r)
+}
+
+// handleAPIBookSyncLog wraps the handler for single book sync log
+func (s *Server) handleAPIBookSyncLog(w http.ResponseWriter, r *http.Request) {
+	s.apiHandler.GetBookSyncLog(w, r)
+}
+

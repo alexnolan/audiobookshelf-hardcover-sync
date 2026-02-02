@@ -462,6 +462,90 @@ header p {
     margin-bottom: 15px;
 }
 
+/* Sync Counters */
+.sync-counters {
+    background: rgba(0, 0, 0, 0.03);
+    border-radius: 8px;
+    padding: 12px;
+    margin: 8px 0;
+}
+
+.counter-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.counter-row:last-child {
+    border-bottom: none;
+}
+
+.counter-label {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.counter-value {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.counter-value.success {
+    color: #28a745;
+}
+
+.counter-value.warning {
+    color: #ffc107;
+}
+
+.counter-value.muted {
+    color: #6c757d;
+}
+
+/* Sync Settings Display */
+.sync-settings-display {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.settings-label {
+    font-size: 0.85rem;
+    color: #666;
+    margin-bottom: 6px;
+}
+
+.settings-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.setting-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    background: #e9ecef;
+    color: #495057;
+    border: 1px solid #dee2e6;
+}
+
+.setting-tag.muted {
+    background: #f8f9fa;
+    color: #adb5bd;
+    border-color: #e9ecef;
+}
+
+.setting-tag.warning {
+    background: #fff3cd;
+    color: #856404;
+    border-color: #ffc107;
+}
+
 .status-actions {
     display: flex;
     gap: 10px;
@@ -738,6 +822,11 @@ header p {
     border-left-color: #4299e1;
 }
 
+.stat-item.muted {
+    border-left-color: #a0aec0;
+    background: #f7fafc;
+}
+
 .stat-value {
     font-size: 2rem;
     font-weight: 700;
@@ -751,6 +840,62 @@ header p {
     color: #718096;
     font-size: 0.875rem;
     display: block;
+}
+
+/* Detailed Settings Section */
+.detailed-settings-section {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    background: #f8fafc;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.detailed-settings-section h4 {
+    margin: 0 0 1rem 0;
+    color: #4a5568;
+    font-size: 1rem;
+}
+
+.settings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.settings-table th,
+.settings-table td {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.settings-table th {
+    background: #edf2f7;
+    font-weight: 600;
+    color: #4a5568;
+}
+
+.settings-table td:first-child {
+    font-weight: 500;
+    color: #2d3748;
+}
+
+.settings-table td:nth-child(2) {
+    white-space: nowrap;
+}
+
+.settings-table .setting-desc {
+    color: #718096;
+    font-size: 0.85rem;
+}
+
+.settings-table .warning-row {
+    background: #fffaf0;
+}
+
+.settings-table .warning-row td {
+    color: #c05621;
 }
 
 /* Book List */
@@ -2099,8 +2244,96 @@ header p {
     }
 }
 
-/* Utility Classes */
-.text-center { text-align: center; }
+/* Book Sync Logs Styles */
+.book-logs-grid {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    margin-top: 1rem;
+}
+
+.book-logs-grid table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.book-logs-grid thead {
+    background-color: #f5f5f5;
+    position: sticky;
+    top: 0;
+}
+
+.book-logs-grid th {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 2px solid #ddd;
+    font-weight: 600;
+    color: #333;
+}
+
+.book-logs-grid td {
+    padding: 12px;
+    border-bottom: 1px solid #eee;
+}
+
+.book-logs-grid tr:hover {
+    background-color: #f9f9f9;
+}
+
+.book-logs-grid tr:last-child td {
+    border-bottom: none;
+}
+
+.header-controls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.header-controls select {
+    padding: 0.5rem;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    font-size: 0.95em;
+    background-color: white;
+    cursor: pointer;
+}
+
+.header-controls select:hover {
+    border-color: #999;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 0.85em;
+    color: white;
+}
+
+.status-synced {
+    background-color: #4caf50;
+}
+
+.status-skipped {
+    background-color: #ff9800;
+}
+
+.status-error {
+    background-color: #d32f2f;
+}
+
+.status-not-found {
+    background-color: #2196f3;
+}
+
+.status-pending {
+    background-color: #9c27b0;
+}
+
 .text-left { text-align: left; }
 .text-right { text-align: right; }
 .mb-0 { margin-bottom: 0; }
