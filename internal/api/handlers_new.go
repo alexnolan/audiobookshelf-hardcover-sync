@@ -617,3 +617,86 @@ func (h *Handler) GetSyncSummary(w http.ResponseWriter, r *http.Request) {
 
 	h.writeSuccessResponse(w, response)
 }
+// GetBookSyncLogs handles GET /api/profiles/{id}/book-syncs
+func (h *Handler) GetBookSyncLogs(w http.ResponseWriter, r *http.Request) {
+	profileID := strings.TrimPrefix(r.URL.Path, "/api/profiles/")
+	profileID = strings.TrimSuffix(profileID, "/book-syncs")
+
+	// Get query parameters for pagination
+	limit := 100
+	offset := 0
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		fmt.Sscanf(limitStr, "%d", &limit)
+	}
+	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+		fmt.Sscanf(offsetStr, "%d", &offset)
+	}
+	if statusFilter := r.URL.Query().Get("status"); statusFilter != "" {
+		// If status filter is provided, use GetBookSyncLogsByStatus
+		logs, err := h.multiUserService.GetBookSyncLogsByStatus(profileID, statusFilter, limit)
+		if err != nil {
+			h.log.Error("Failed to get book sync logs", map[string]interface{}{
+				"profile_id": profileID,
+				"error":      err.Error(),
+			})
+			h.writeErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve book sync logs")
+			return
+		}
+
+		h.writeSuccessResponse(w, map[string]interface{}{
+			"profile_id": profileID,
+			"status":     statusFilter,
+			"logs":       logs,
+			"count":      len(logs),
+		})
+		return
+	}
+
+	logs, total, err := h.multiUserService.GetBookSyncLogs(profileID, limit, offset)
+	if err != nil {
+		h.log.Error("Failed to get book sync logs", map[string]interface{}{
+			"profile_id": profileID,
+			"error":      err.Error(),
+		})
+		h.writeErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve book sync logs")
+		return
+	}
+
+	h.writeSuccessResponse(w, map[string]interface{}{
+		"profile_id": profileID,
+		"logs":       logs,
+		"total":      total,
+		"limit":      limit,
+		"offset":     offset,
+	})
+}
+
+// GetBookSyncLog handles GET /api/profiles/{id}/book-syncs/{audiobookId}
+func (h *Handler) GetBookSyncLog(w http.ResponseWriter, r *http.Request) {
+	profileID := strings.TrimPrefix(r.URL.Path, "/api/profiles/")
+	parts := strings.Split(profileID, "/book-syncs/")
+	if len(parts) != 2 {
+		h.writeErrorResponse(w, http.StatusBadRequest, "Invalid URL format")
+		return
+	}
+	profileID = parts[0]
+	audiobookID := parts[1]
+
+	log, err := h.multiUserService.GetBookSyncLog(profileID, audiobookID)
+	if err != nil {
+		h.log.Error("Failed to get book sync log", map[string]interface{}{
+			"profile_id":  profileID,
+			"audiobook_id": audiobookID,
+			"error":       err.Error(),
+		})
+		h.writeErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve book sync log")
+		return
+	}
+
+	if log == nil {
+		h.writeErrorResponse(w, http.StatusNotFound, "Book sync log not found")
+		return
+	}
+
+	h.writeSuccessResponse(w, log)
+}

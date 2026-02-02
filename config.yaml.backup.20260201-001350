@@ -1,0 +1,49 @@
+# Server configuration
+server:
+  port: "8765"
+  shutdown_timeout: "10s"
+  enable_web_ui: true  # Enable web UI for multi-user mode
+
+# Rate limiting configuration
+rate_limit:
+  rate: "1500ms"
+  burst: 2
+  max_concurrent: 3
+
+# Logging configuration
+logging:
+  level: "info"
+  format: "console"
+
+# Audiobookshelf configuration
+audiobookshelf:
+  url: "https://your-audiobookshelf-instance.com"
+  token: "your-audiobookshelf-token"
+
+# Hardcover configuration
+hardcover:
+  base_url: ""
+  token: "your-hardcover-token"
+
+# Sync configuration
+sync:
+  incremental: true
+  state_file: "./data/sync_state.json"
+  min_change_threshold: 60
+  sync_interval: "1h"
+  minimum_progress: 0.01
+  sync_want_to_read: true
+  process_unread_books: false
+  sync_owned: true
+  dry_run: false
+  test_book_filter: ""
+  test_book_limit: 0
+  include_ebooks: false
+  libraries:
+    include: []
+    exclude: []
+
+# Database configuration
+database:
+  driver: "sqlite"
+  path: "./data/audiobookshelf-hardcover-sync.db"

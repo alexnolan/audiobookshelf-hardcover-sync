@@ -17,17 +17,30 @@ import (
 
 // SyncProfileStatus represents the sync status for a profile
 type SyncProfileStatus struct {
-	ProfileID          string                 `json:"profile_id"`
-	ProfileName        string                 `json:"profile_name"`
-	Status             string                 `json:"status"` // "idle", "syncing", "error", "completed"
-	LastSync           *time.Time             `json:"last_sync"`
-	Error              string                 `json:"error,omitempty"`
-	Progress           string                 `json:"progress,omitempty"`
-	BooksTotal         int                    `json:"books_total,omitempty"`
-	BooksSynced        int                    `json:"books_synced,omitempty"`
+	ProfileID          string                  `json:"profile_id"`
+	ProfileName        string                  `json:"profile_name"`
+	Status             string                  `json:"status"` // "idle", "syncing", "error", "completed"
+	LastSync           *time.Time              `json:"last_sync"`
+	Error              string                  `json:"error,omitempty"`
+	Progress           string                  `json:"progress,omitempty"`
+	BooksTotal         int                     `json:"books_total,omitempty"`
+	BooksSynced        int                     `json:"books_synced,omitempty"`
+	BooksSkipped       int                     `json:"books_skipped,omitempty"`
 	BooksNotFound      []sync.BookNotFoundInfo `json:"books_not_found,omitempty"`
 	Mismatches         []mismatch.BookMismatch `json:"mismatches,omitempty"`
 	LastSyncSummary    *sync.SyncSummary       `json:"last_sync_summary,omitempty"`
+	SyncSettings       *SyncSettings           `json:"sync_settings,omitempty"`
+}
+
+// SyncSettings represents the key sync configuration for display
+type SyncSettings struct {
+	ProcessUnreadBooks bool    `json:"process_unread_books"`
+	SyncWantToRead     bool    `json:"sync_want_to_read"`
+	SyncOwned          bool    `json:"sync_owned"`
+	IncludeEbooks      bool    `json:"include_ebooks"`
+	Incremental        bool    `json:"incremental"`
+	MinimumProgress    float64 `json:"minimum_progress"`
+	DryRun             bool    `json:"dry_run"`
 }
 
 // MultiUserService manages sync operations for multiple users
@@ -225,6 +238,29 @@ func (s *MultiUserService) GetProfileStatus(profileID string) *SyncProfileStatus
 		}
 	}
 	
+	// Add sync settings from profile config
+	if profile, err := s.GetProfile(profileID); err == nil && profile != nil {
+		status.SyncSettings = &SyncSettings{
+			ProcessUnreadBooks: profile.SyncConfig.ProcessUnreadBooks,
+			SyncWantToRead:     profile.SyncConfig.SyncWantToRead,
+			SyncOwned:          profile.SyncConfig.SyncOwned,
+			IncludeEbooks:      profile.SyncConfig.IncludeEbooks,
+			Incremental:        profile.SyncConfig.Incremental,
+			MinimumProgress:    profile.SyncConfig.MinimumProgress,
+			DryRun:             profile.SyncConfig.DryRun,
+		}
+		
+		// Calculate books skipped (total - synced - not found - mismatches)
+		notFoundCount := len(status.BooksNotFound)
+		mismatchCount := len(status.Mismatches)
+		if status.BooksTotal > 0 {
+			status.BooksSkipped = status.BooksTotal - status.BooksSynced - notFoundCount - mismatchCount
+			if status.BooksSkipped < 0 {
+				status.BooksSkipped = 0
+			}
+		}
+	}
+	
 	return status
 }
 
@@ -344,6 +380,10 @@ func (s *MultiUserService) performSync(ctx context.Context, profileID string, pr
         })
         return
     }
+
+    // Set book sync logger to enable per-book logging
+    syncService.SetBookSyncLogger(s.repository)
+    syncService.SetProfileID(profileID)
 
     // Store the sync service for status access
     s.servicesMutex.Lock()
@@ -499,4 +539,18 @@ func (s *MultiUserService) IsProfileSyncing(profileID string) bool {
 	
 	_, exists := s.activeSyncs[profileID]
 	return exists
+}
+// GetBookSyncLogs returns paginated book sync logs for a profile
+func (s *MultiUserService) GetBookSyncLogs(profileID string, limit, offset int) ([]database.BookSyncLog, int64, error) {
+	return s.repository.GetBookSyncLogs(profileID, limit, offset)
+}
+
+// GetBookSyncLogsByStatus returns book sync logs filtered by status
+func (s *MultiUserService) GetBookSyncLogsByStatus(profileID, status string, limit int) ([]database.BookSyncLog, error) {
+	return s.repository.GetBookSyncLogsByStatus(profileID, status, limit)
+}
+
+// GetBookSyncLog returns a specific book's sync log
+func (s *MultiUserService) GetBookSyncLog(profileID, audiobookID string) (*database.BookSyncLog, error) {
+	return s.repository.GetBookSyncLog(profileID, audiobookID)
 }

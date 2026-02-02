@@ -405,6 +405,8 @@ class SyncProfileApp {
             const lastSync = lastSyncISO ? this.formatRelativeTime(lastSyncISO) : 'Never';
             const statusClass = user.active ? 'active' : 'inactive';
             const statusIcon = user.active ? '✓' : '✗';
+            const lastCollectedABS = user.last_collected_abs ? this.formatRelativeTime(user.last_collected_abs) : 'Never';
+            const lastCollectedHC = user.last_collected_hardcover ? this.formatRelativeTime(user.last_collected_hardcover) : 'Never';
             
             return `
                 <div class="user-card">
@@ -424,6 +426,10 @@ class SyncProfileApp {
                             <div class="user-info-item">
                                 <strong>Last Synced:</strong>
                                 <span class="last-sync" title="${lastSyncISO ? new Date(lastSyncISO).toLocaleString() : 'Never'}">${lastSync}</span>
+                            </div>
+                            <div class="user-info-item">
+                                <strong>Collections:</strong>
+                                <span style="font-size: 0.9rem; color: #666;">📚 ABS: ${lastCollectedABS} | 📖 HC: ${lastCollectedHC}</span>
                             </div>
                         </div>
                         
@@ -475,6 +481,7 @@ class SyncProfileApp {
             if (response.ok && data.success) {
                 this.users = data.data;
                 this.renderProfiles();
+                updateProfileSelectForBookLogs(); // Update the profile select dropdown
             } else {
                 // Handle different types of errors
                 if (data.error && data.error.code === 'authentication_required') {
@@ -538,48 +545,6 @@ class SyncProfileApp {
                             if (statusData.data?.state === 'completed' || statusData.data?.state === 'error') {
                                 summaryPromises.push(this.fetchSyncSummary(user.id, statuses));
                             }
-                        // HC-specific: show correct notices and add extra fields
-                        if (source === 'hc') {
-                            const hasBookMatch = !!(cleanData.url || cleanData.slug || cleanData.path);
-                            if (hasBookMatch) {
-                                // We found a book via search (slug/path/url), but it's a mismatch (edition not matched)
-                                details.push(`
-                                    <div class="mt-2">
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                            Edition not matched — showing closest book match
-                                        </span>
-                                    </div>
-                                `);
-                            } else {
-                                // We couldn't even find a book match
-                                details.push(`
-                                    <div class="mt-2">
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                            Book not found on Hardcover
-                                        </span>
-                                    </div>
-                                `);
-                            }
-
-                            // Extra HC metadata if present
-                            if (typeof cleanData.average_rating === 'number' || typeof cleanData.rating === 'number') {
-                                const r = (cleanData.average_rating ?? cleanData.rating).toString();
-                                metadata.push({ label: 'Rating', value: this.escapeHtml(r) });
-                            }
-                            if (typeof cleanData.ratings_count === 'number') {
-                                metadata.push({ label: 'Ratings', value: this.escapeHtml(cleanData.ratings_count.toString()) });
-                            }
-                            if (cleanData.slug) {
-                                metadata.push({ label: 'Slug', value: this.escapeHtml(cleanData.slug) });
-                            }
-                            if (cleanData.series && typeof cleanData.series === 'string') {
-                                metadata.push({ label: 'Series', value: this.escapeHtml(cleanData.series) });
-                            }
-                            const genres = cleanData.genres || cleanData.subjects;
-                            if (Array.isArray(genres) && genres.length > 0) {
-                                metadata.push({ label: 'Genres', value: genres.map(g => this.escapeHtml(String(g))).join(', ') });
-                            }
-                        }
                         }
                     }
                 } catch (error) {
@@ -670,18 +635,23 @@ class SyncProfileApp {
             const progress = status.progress || 0;
             const booksSynced = status.books_synced || 0;
             const booksTotal = status.books_total || 0;
+            const booksSkipped = status.books_skipped || 0;
             const booksNotFound = status.books_not_found?.length || 0;
             const mismatches = status.mismatches?.length || 0;
+            const syncSettings = status.sync_settings || {};
             
             // Determine if we should show the View Details button
             const hasSummary = status.has_summary || 
                              (status.status === 'completed' && 
-                              (booksSynced > 0 || booksNotFound > 0 || mismatches > 0));
+                              (booksSynced > 0 || booksNotFound > 0 || mismatches > 0 || booksSkipped > 0));
             
             const progressPercent = booksTotal > 0 ? Math.round((booksSynced / booksTotal) * 100) : 0;
             const lastSync = status.last_sync || status.lastSync || null;
             const statusText = status.status || 'idle';
             const profileName = status.profile_name || status.profile_id || 'Unknown Profile';
+            
+            // Build sync settings display
+            const settingsHtml = this.buildSyncSettingsHtml(syncSettings);
 
             return `
                 <div class="status-card ${statusText.toLowerCase()}">
@@ -697,18 +667,36 @@ class SyncProfileApp {
                             <div><strong>Progress:</strong> ${progress}%</div>
                         ` : ''}
                         ${booksTotal > 0 ? `
-                            <div><strong>Books Processed:</strong> ${booksSynced} of ${booksTotal}</div>
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: ${progressPercent}%"></div>
+                            <div class="sync-counters">
+                                <div class="counter-row">
+                                    <span class="counter-label">Total Processed:</span>
+                                    <span class="counter-value">${booksTotal}</span>
+                                </div>
+                                <div class="counter-row">
+                                    <span class="counter-label">Actually Synced:</span>
+                                    <span class="counter-value success">${booksSynced}</span>
+                                </div>
+                                ${booksSkipped > 0 ? `
+                                <div class="counter-row">
+                                    <span class="counter-label">Skipped:</span>
+                                    <span class="counter-value muted">${booksSkipped}</span>
+                                </div>
+                                ` : ''}
+                                ${booksNotFound > 0 ? `
+                                <div class="counter-row">
+                                    <span class="counter-label">Not Found:</span>
+                                    <span class="counter-value warning">${booksNotFound}</span>
+                                </div>
+                                ` : ''}
+                                ${mismatches > 0 ? `
+                                <div class="counter-row">
+                                    <span class="counter-label">Mismatches:</span>
+                                    <span class="counter-value warning">${mismatches}</span>
+                                </div>
+                                ` : ''}
                             </div>
                         ` : ''}
-                        ${hasSummary ? `
-                            <div class="sync-summary-stats">
-                                <span class="stat success">✓ ${booksSynced} synced</span>
-                                ${booksNotFound > 0 ? `<span class="stat warning">⚠ ${booksNotFound} not found</span>` : ''}
-                                ${mismatches > 0 ? `<span class="stat warning">⚠ ${mismatches} mismatches</span>` : ''}
-                            </div>
-                        ` : ''}
+                        ${settingsHtml}
                         ${status.message ? `
                             <div class="status-message">${this.escapeHtml(status.message)}</div>
                         ` : ''}
@@ -726,6 +714,9 @@ class SyncProfileApp {
                                 ${statusText.toLowerCase() === 'error' ? 'Retry Sync' : 'Start Sync'}
                             </button>
                         `}
+                        <button class="btn btn-secondary" onclick="viewProfileLibrary('${profileId}')">
+                            📚 View Library
+                        </button>
                         ${hasSummary ? `
                             <button class="btn btn-secondary" onclick="app.showSyncSummary('${profileId}')">
                                 View Details
@@ -735,6 +726,86 @@ class SyncProfileApp {
                 </div>
             `;
         }).join('');
+    }
+    
+    buildSyncSettingsHtml(settings) {
+        if (!settings || Object.keys(settings).length === 0) {
+            return '';
+        }
+        
+        const settingItems = [];
+        
+        // Key boolean settings with icons
+        if (settings.dry_run) {
+            settingItems.push('<span class="setting-tag warning" title="Dry Run Mode - No changes will be made">🔒 Dry Run</span>');
+        }
+        if (settings.process_unread_books) {
+            settingItems.push('<span class="setting-tag" title="Unread books will be synced">📖 Unread</span>');
+        } else {
+            settingItems.push('<span class="setting-tag muted" title="Unread books will be skipped">📖 No Unread</span>');
+        }
+        if (settings.sync_want_to_read) {
+            settingItems.push('<span class="setting-tag" title="Want to Read status will be synced">📚 Want to Read</span>');
+        } else {
+            settingItems.push('<span class="setting-tag muted" title="Want to Read will be skipped">📚 No WTR</span>');
+        }
+        if (settings.sync_owned) {
+            settingItems.push('<span class="setting-tag" title="Owned status will be synced">✅ Owned</span>');
+        }
+        if (settings.include_ebooks) {
+            settingItems.push('<span class="setting-tag" title="Ebooks are included">📱 Ebooks</span>');
+        }
+        if (settings.incremental) {
+            settingItems.push('<span class="setting-tag" title="Incremental sync enabled">⚡ Incremental</span>');
+        }
+        if (settings.minimum_progress > 0) {
+            const pct = Math.round(settings.minimum_progress * 100);
+            settingItems.push(`<span class="setting-tag muted" title="Minimum progress threshold">${pct}% min</span>`);
+        }
+        
+        if (settingItems.length === 0) {
+            return '';
+        }
+        
+        return `
+            <div class="sync-settings-display">
+                <div class="settings-label">Settings:</div>
+                <div class="settings-tags">${settingItems.join('')}</div>
+            </div>
+        `;
+    }
+    
+    buildDetailedSettingsHtml(settings) {
+        if (!settings || Object.keys(settings).length === 0) {
+            return '';
+        }
+        
+        const rows = [];
+        
+        // Build detailed settings table
+        rows.push(`<tr><td>Process Unread Books</td><td>${settings.process_unread_books ? '✅ Yes' : '❌ No'}</td><td class="setting-desc">When disabled, books with 0% progress are skipped</td></tr>`);
+        rows.push(`<tr><td>Sync Want to Read</td><td>${settings.sync_want_to_read ? '✅ Yes' : '❌ No'}</td><td class="setting-desc">Sync books with 0% progress as "Want to Read"</td></tr>`);
+        rows.push(`<tr><td>Sync Owned Status</td><td>${settings.sync_owned ? '✅ Yes' : '❌ No'}</td><td class="setting-desc">Mark synced books as owned in Hardcover</td></tr>`);
+        rows.push(`<tr><td>Include Ebooks</td><td>${settings.include_ebooks ? '✅ Yes' : '❌ No'}</td><td class="setting-desc">Include ebook media type in sync</td></tr>`);
+        rows.push(`<tr><td>Incremental Sync</td><td>${settings.incremental ? '✅ Yes' : '❌ No'}</td><td class="setting-desc">Only sync books with changes since last sync</td></tr>`);
+        rows.push(`<tr><td>Minimum Progress</td><td>${Math.round((settings.minimum_progress || 0) * 100)}%</td><td class="setting-desc">Minimum progress before syncing a book</td></tr>`);
+        if (settings.dry_run) {
+            rows.push(`<tr class="warning-row"><td>Dry Run Mode</td><td>⚠️ Enabled</td><td class="setting-desc">No changes will be made to Hardcover</td></tr>`);
+        }
+        
+        return `
+            <div class="detailed-settings-section">
+                <h4>Sync Configuration</h4>
+                <table class="settings-table">
+                    <thead>
+                        <tr><th>Setting</th><th>Value</th><th>Description</th></tr>
+                    </thead>
+                    <tbody>
+                        ${rows.join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
     }
     
     showSyncSummary(profileId) {
@@ -769,6 +840,8 @@ class SyncProfileApp {
         const summary = status.last_sync_summary || status.lastSyncSummary || null;
         const booksSynced = (summary && typeof summary.books_synced === 'number') ? summary.books_synced : (status.books_synced || 0);
         const booksTotal = (summary && typeof summary.total_books_processed === 'number') ? summary.total_books_processed : (status.books_total || 0);
+        const booksSkipped = status.books_skipped || 0;
+        const syncSettings = status.sync_settings || {};
         // Prefer top-level mismatches; only fall back to summary mismatches if top-level is empty
         let mismatchesArr = Array.isArray(status.mismatches) && status.mismatches.length > 0
             ? status.mismatches
@@ -790,12 +863,17 @@ class SyncProfileApp {
         const __absBaseUrl = profileEntry && profileEntry.config && profileEntry.config.audiobookshelf_url
             ? String(profileEntry.config.audiobookshelf_url).replace(/\/+$/, '')
             : '';
+        
+        // Build sync settings section for the detailed view
+        const settingsHtml = this.buildDetailedSettingsHtml(syncSettings);
+        
         let html = `
             <div class="sync-summary">
                 <div class="summary-header">
                     <h3>Sync Summary: ${this.escapeHtml(status.profile_name || 'Unknown Profile')}</h3>
                     <div class="last-sync">Last Sync: ${lastSyncDate}</div>
                 </div>
+                ${settingsHtml}
                 <div class="summary-stats">
                     <div class="stat-item success">
                         <span class="stat-value">${booksSynced}</span>
@@ -804,7 +882,13 @@ class SyncProfileApp {
                     <div class="stat-item info">
                         <span class="stat-value">${booksTotal}</span>
                         <span class="stat-label">Total Processed</span>
-                    </div>`;
+                    </div>
+                    ${booksSkipped > 0 ? `
+                    <div class="stat-item muted">
+                        <span class="stat-value">${booksSkipped}</span>
+                        <span class="stat-label">Books Skipped</span>
+                    </div>
+                    ` : ''}`;
         
         // Add books not found stat if any
         if (status.books_not_found?.length > 0) {
@@ -2265,6 +2349,115 @@ function closeEditModal() {
     app.closeEditModal();
 }
 
+// Book Sync Logs Functions
+async function loadBookSyncLogs() {
+    const profileSelect = document.getElementById('profile-select');
+    const statusFilter = document.getElementById('status-filter');
+    const container = document.getElementById('book-logs-container');
+    
+    const profileId = profileSelect.value;
+    const status = statusFilter.value;
+    
+    if (!profileId) {
+        container.innerHTML = '<p style="padding: 2rem; text-align: center; color: #999;">Please select a profile</p>';
+        return;
+    }
+    
+    container.innerHTML = '<div style="padding: 2rem; text-align: center;">Loading...</div>';
+    
+    try {
+        let url = `/api/profiles/${profileId}/book-syncs?limit=100&offset=0`;
+        if (status) {
+            url += `&status=${status}`;
+        }
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        displayBookSyncLogs(data.logs || []);
+    } catch (error) {
+        console.error('Failed to load book sync logs:', error);
+        container.innerHTML = `<p style="padding: 2rem; color: #d32f2f;">Failed to load book sync logs: ${error.message}</p>`;
+    }
+}
+
+function displayBookSyncLogs(logs) {
+    const container = document.getElementById('book-logs-container');
+    
+    if (!logs || logs.length === 0) {
+        container.innerHTML = '<p style="padding: 2rem; text-align: center; color: #999;">No book sync logs found</p>';
+        return;
+    }
+    
+    const statusColorMap = {
+        'SYNCED': '#4caf50',
+        'SKIPPED': '#ff9800',
+        'ERROR': '#d32f2f',
+        'NOT_FOUND': '#2196f3',
+        'PENDING': '#9c27b0'
+    };
+    
+    let html = '<table style="width: 100%; border-collapse: collapse;">';
+    html += `<thead style="background-color: #f5f5f5; position: sticky; top: 0;">
+        <tr>
+            <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Title</th>
+            <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Author</th>
+            <th style="padding: 12px; text-align: center; border-bottom: 2px solid #ddd;">Status</th>
+            <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Progress</th>
+            <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Last Attempt</th>
+            <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Error</th>
+        </tr>
+    </thead>
+    <tbody>`;
+    
+    logs.forEach(log => {
+        const statusColor = statusColorMap[log.Status] || '#999';
+        const progress = log.Progress ? (log.Progress * 100).toFixed(1) + '%' : '-';
+        const lastAttempt = log.LastAttempt ? new Date(log.LastAttempt).toLocaleString() : 'Never';
+        const errorMsg = log.ErrorMessage || '-';
+        const errorDisplay = errorMsg.length > 50 ? errorMsg.substring(0, 47) + '...' : errorMsg;
+        
+        html += `<tr style="border-bottom: 1px solid #eee; hover-background: #f9f9f9;">
+            <td style="padding: 12px;">${escapeHtml(log.Title)}</td>
+            <td style="padding: 12px;">${escapeHtml(log.Author)}</td>
+            <td style="padding: 12px; text-align: center;">
+                <span style="background-color: ${statusColor}; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85em;">
+                    ${log.Status}
+                </span>
+            </td>
+            <td style="padding: 12px; text-align: right;">${progress}</td>
+            <td style="padding: 12px; font-size: 0.9em; color: #666;">${lastAttempt}</td>
+            <td style="padding: 12px; font-size: 0.9em; color: #d32f2f;" title="${escapeHtml(errorMsg)}">${escapeHtml(errorDisplay)}</td>
+        </tr>`;
+    });
+    
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Update profile select when users are loaded
+function updateProfileSelectForBookLogs() {
+    const select = document.getElementById('profile-select');
+    const users = app.users || [];
+    
+    let html = '<option value="">Select a Profile...</option>';
+    users.forEach(user => {
+        html += `<option value="${user.id}">${user.name}</option>`;
+    });
+    
+    select.innerHTML = html;
+}
+
 // Initialize the app when the page loads
 let app;
 document.addEventListener('DOMContentLoaded', () => {
@@ -2321,3 +2514,554 @@ window.addEventListener('beforeunload', () => {
         app.stopAutoRefresh();
     }
 });
+// ============================================================
+// LIBRARY TAB STATE AND FUNCTIONS
+// ============================================================
+
+// Global library state
+let libraryState = {
+    currentPage: 1,
+    pageSize: 50,
+    filter: '',
+    sort: 'title',
+    searchQuery: '',
+    profileId: '',
+    currentBookDetail: null,
+};
+
+// Load library books with pagination and filtering
+async function loadLibraryBooks() {
+    if (!libraryState.profileId) {
+        document.getElementById('library-inner').innerHTML = '<p style="text-align:center;color:#999;">Please select a profile from the dropdown above.</p>';
+        return;
+    }
+
+    try {
+        const params = new URLSearchParams({
+            page: libraryState.currentPage,
+            limit: libraryState.pageSize,
+            filter: libraryState.filter,
+            sort: libraryState.sort,
+        });
+
+        const response = await fetch(`/api/profiles/${libraryState.profileId}/books?${params}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const data = await response.json();
+        if (data.success) {
+            renderLibraryBooks(data.data, data.pagination);
+            await loadSyncSummary();
+        } else {
+            app.showToast(data.error || 'Failed to load books', 'error');
+        }
+    } catch (error) {
+        console.error('Error loading library books:', error);
+        app.showToast('Failed to load books', 'error');
+    }
+}
+
+// Render books table and controls
+function renderLibraryBooks(books, pagination) {
+    let html = `
+        <div style="margin-bottom: 1.5rem;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;" id="library-stats">
+                <!-- Stats will be loaded by loadSyncSummary() -->
+            </div>
+
+            <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+                <input type="text" id="library-search" placeholder="Search by title or author..." 
+                    onkeyup="libraryState.searchQuery = this.value; libraryState.currentPage = 1; applyLibraryFilter()"
+                    style="flex: 1; min-width: 200px; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
+                
+                <select id="library-filter" onchange="libraryState.filter = this.value; libraryState.currentPage = 1; loadLibraryBooks()"
+                    style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
+                    <option value="">All Books</option>
+                    <option value="in_sync">In Sync</option>
+                    <option value="needs_sync">Needs Sync</option>
+                    <option value="unmapped">Unmapped</option>
+                    <option value="disabled">Disabled</option>
+                </select>
+
+                <select id="library-sort" onchange="libraryState.sort = this.value; loadLibraryBooks()"
+                    style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
+                    <option value="title">Sort by Title</option>
+                    <option value="progress_diff">Sort by Diff %</option>
+                    <option value="last_updated">Sort by Last Updated</option>
+                </select>
+
+                <button class="btn btn-primary" onclick="syncAllBooks()">🔄 Sync All</button>
+                <button class="btn btn-primary" onclick="collectABSBooks()">📥 Collect ABS</button>
+                <button class="btn btn-primary" onclick="collectHardcoverBooks()">📥 Collect HC</button>
+            </div>
+
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                    <thead style="background: #f5f5f5; border-bottom: 2px solid #ddd;">
+                        <tr>
+                            <th style="padding: 0.75rem; text-align: left;">Title</th>
+                            <th style="padding: 0.75rem; text-align: left;">Author</th>
+                            <th style="padding: 0.75rem; text-align: center;">ABS</th>
+                            <th style="padding: 0.75rem; text-align: center;">HC</th>
+                            <th style="padding: 0.75rem; text-align: center;">Diff</th>
+                            <th style="padding: 0.75rem; text-align: center;">Status</th>
+                            <th style="padding: 0.75rem; text-align: center;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+    if (!books || books.length === 0) {
+        html += '<tr><td colspan="7" style="padding: 2rem; text-align: center; color: #999;">No books found</td></tr>';
+    } else {
+        books.forEach(book => {
+            const statusBadge = getStatusBadge(book);
+            const absProgress = (book.abs_progress * 100).toFixed(1);
+            const hcProgress = (book.hardcover_progress * 100).toFixed(1);
+            const diff = Math.abs(book.progress_diff * 100).toFixed(1);
+            
+            html += `<tr style="border-bottom: 1px solid #eee; hover-effect">
+                <td style="padding: 0.75rem;">${escapeHtml(book.abs_title)}</td>
+                <td style="padding: 0.75rem;">${escapeHtml(book.abs_author || 'Unknown')}</td>
+                <td style="padding: 0.75rem; text-align: center;">
+                    <div style="width: 60px; height: 8px; background: #eee; border-radius: 4px; margin: 0 auto; overflow: hidden;">
+                        <div style="width: ${absProgress}%; height: 100%; background: #4CAF50;"></div>
+                    </div>
+                    <small>${absProgress}%</small>
+                </td>
+                <td style="padding: 0.75rem; text-align: center;">
+                    <div style="width: 60px; height: 8px; background: #eee; border-radius: 4px; margin: 0 auto; overflow: hidden;">
+                        <div style="width: ${hcProgress}%; height: 100%; background: #2196F3;"></div>
+                    </div>
+                    <small>${hcProgress}%</small>
+                </td>
+                <td style="padding: 0.75rem; text-align: center;"><strong>${diff}%</strong></td>
+                <td style="padding: 0.75rem; text-align: center;">${statusBadge}</td>
+                <td style="padding: 0.75rem; text-align: center;">
+                    <button class="btn btn-secondary" onclick="openBookDetail('${book.abs_id}')" style="margin: 0 0.25rem; padding: 0.35rem 0.75rem; font-size: 0.85rem;">Detail</button>
+                    <button class="btn btn-secondary" onclick="syncSingleBook('${book.abs_id}')" style="margin: 0 0.25rem; padding: 0.35rem 0.75rem; font-size: 0.85rem;">Sync</button>
+                </td>
+            </tr>`;
+        });
+    }
+
+    html += `
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div style="display: flex; justify-content: center; align-items: center; gap: 1rem; margin-top: 1.5rem;">
+                <button class="btn btn-secondary" onclick="previousPage()" ${pagination.page <= 1 ? 'disabled' : ''}>← Previous</button>
+                <span style="color: #666;">Page ${pagination.page} of ${pagination.total_pages} (${pagination.total} total)</span>
+                <button class="btn btn-secondary" onclick="nextPage()" ${pagination.page >= pagination.total_pages ? 'disabled' : ''}>Next →</button>
+            </div>
+        </div>`;
+
+    document.getElementById('library-inner').innerHTML = html;
+}
+
+// Get status badge HTML
+function getStatusBadge(book) {
+    if (book.abs_id === null || book.hc_book_id === null) {
+        return '<span style="background: #999; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem;">Unmapped</span>';
+    }
+    if (!book.sync_enabled) {
+        return '<span style="background: #f44336; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem;">Disabled</span>';
+    }
+    const diff = Math.abs(book.progress_diff);
+    if (diff < 0.01) {
+        return '<span style="background: #4CAF50; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem;">✓ In Sync</span>';
+    }
+    return '<span style="background: #FF9800; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem;">⚠ Needs Sync</span>';
+}
+
+// Load and render sync summary statistics
+async function loadSyncSummary() {
+    if (!libraryState.profileId) return;
+
+    try {
+        const response = await fetch(`/api/profiles/${libraryState.profileId}/sync-summary`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const data = await response.json();
+        if (data.success) {
+            renderSyncSummary(data.data);
+        }
+    } catch (error) {
+        console.error('Error loading sync summary:', error);
+    }
+}
+
+// Render summary statistics cards
+function renderSyncSummary(stats) {
+    const html = `
+        <div style="background: white; padding: 1rem; border-radius: 8px; border-left: 4px solid #4CAF50;">
+            <div style="font-size: 0.85rem; color: #666;">Total ABS Books</div>
+            <div style="font-size: 1.8rem; font-weight: bold; color: #4CAF50;">${stats.total_abs_books || 0}</div>
+        </div>
+        <div style="background: white; padding: 1rem; border-radius: 8px; border-left: 4px solid #2196F3;">
+            <div style="font-size: 0.85rem; color: #666;">Mapped to HC</div>
+            <div style="font-size: 1.8rem; font-weight: bold; color: #2196F3;">${stats.mapped_books || 0}</div>
+        </div>
+        <div style="background: white; padding: 1rem; border-radius: 8px; border-left: 4px solid #4CAF50;">
+            <div style="font-size: 0.85rem; color: #666;">In Sync</div>
+            <div style="font-size: 1.8rem; font-weight: bold; color: #4CAF50;">${stats.in_sync_books || 0}</div>
+        </div>
+        <div style="background: white; padding: 1rem; border-radius: 8px; border-left: 4px solid #FF9800;">
+            <div style="font-size: 0.85rem; color: #666;">Needs Sync</div>
+            <div style="font-size: 1.8rem; font-weight: bold; color: #FF9800;">${stats.needs_sync_books || 0}</div>
+        </div>
+        <div style="background: white; padding: 1rem; border-radius: 8px; border-left: 4px solid #999;">
+            <div style="font-size: 0.85rem; color: #666;">Unmapped</div>
+            <div style="font-size: 1.8rem; font-weight: bold; color: #999;">${stats.unmapped_books || 0}</div>
+        </div>`;
+
+    const statsDiv = document.getElementById('library-stats');
+    if (statsDiv) {
+        statsDiv.innerHTML = html;
+    }
+}
+
+// Open book detail modal
+async function openBookDetail(absBookId) {
+    if (!libraryState.profileId) return;
+
+    try {
+        const response = await fetch(`/api/profiles/${libraryState.profileId}/books/${absBookId}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const data = await response.json();
+        if (data.success) {
+            renderBookDetail(data.data);
+            document.getElementById('book-detail-modal').style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Error loading book detail:', error);
+        app.showToast('Failed to load book details', 'error');
+    }
+}
+
+// Render book detail modal content
+function renderBookDetail(book) {
+    const absProgress = (book.abs_progress * 100).toFixed(1);
+    const hcProgress = (book.hardcover_progress * 100).toFixed(1);
+
+    let html = `
+        <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;" id="book-detail-modal">
+            <div style="background: white; border-radius: 8px; max-width: 600px; max-height: 90vh; overflow-y: auto; padding: 2rem; width: 90%;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h3>${escapeHtml(book.abs_title)}</h3>
+                    <button onclick="this.closest('div').parentElement.style.display='none'" style="border: none; background: none; font-size: 1.5rem; cursor: pointer;">×</button>
+                </div>
+
+                <div style="margin-bottom: 1.5rem;">
+                    <p><strong>Author:</strong> ${escapeHtml(book.abs_author || 'Unknown')}</p>
+                    <p><strong>ASIN:</strong> <code>${escapeHtml(book.asin || 'N/A')}</code></p>
+                    <p><strong>ISBN:</strong> <code>${escapeHtml(book.isbn || 'N/A')}</code></p>
+                </div>
+
+                <div style="margin-bottom: 1.5rem;">
+                    <h4>Progress Comparison</h4>
+                    <div style="margin-bottom: 1rem;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span>AudiobookShelf</span>
+                            <strong>${absProgress}%</strong>
+                        </div>
+                        <div style="width: 100%; height: 20px; background: #eee; border-radius: 4px; overflow: hidden;">
+                            <div style="width: ${absProgress}%; height: 100%; background: #4CAF50;"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span>Hardcover</span>
+                            <strong>${hcProgress}%</strong>
+                        </div>
+                        <div style="width: 100%; height: 20px; background: #eee; border-radius: 4px; overflow: hidden;">
+                            <div style="width: ${hcProgress}%; height: 100%; background: #2196F3;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 1.5rem;">
+                    <h4>Sync Status</h4>
+                    <p>${getStatusBadge(book)}</p>
+                </div>
+
+                <div style="margin-bottom: 1.5rem;">
+                    <h4>Progress History (Last 10)</h4>
+                    <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 0.75rem; background: #f9f9f9;">
+                        <table style="width: 100%; font-size: 0.85rem;">
+                            <thead style="border-bottom: 1px solid #ddd;">
+                                <tr>
+                                    <th style="padding: 0.5rem; text-align: left;">Date</th>
+                                    <th style="padding: 0.5rem; text-align: left;">Source</th>
+                                    <th style="padding: 0.5rem; text-align: right;">Progress</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
+                            
+    if (book.progress_history && book.progress_history.length > 0) {
+        book.progress_history.forEach(entry => {
+            const date = new Date(entry.updated_at).toLocaleString();
+            html += `<tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 0.5rem;">${date}</td>
+                <td style="padding: 0.5rem;">${entry.source || 'unknown'}</td>
+                <td style="padding: 0.5rem; text-align: right;"><strong>${(entry.progress * 100).toFixed(1)}%</strong></td>
+            </tr>`;
+        });
+    } else {
+        html += '<tr><td colspan="3" style="padding: 1rem; text-align: center; color: #999;">No history available</td></tr>';
+    }
+
+    html += `
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 1.5rem;">
+                    <h4>Sync Events (Last 5)</h4>
+                    <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 0.75rem; background: #f9f9f9;">`;
+                        
+    if (book.sync_events && book.sync_events.length > 0) {
+        book.sync_events.forEach(event => {
+            const date = new Date(event.created_at).toLocaleString();
+            html += `<div style="margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid #eee;">
+                <div style="font-size: 0.85rem; color: #666;">${date}</div>
+                <div style="font-weight: bold;">${event.event_type}</div>
+                <div style="font-size: 0.85rem; color: #333;">${event.details || ''}</div>
+            </div>`;
+        });
+    } else {
+        html += '<div style="color: #999; text-align: center; padding: 1rem;">No events recorded</div>';
+    }
+
+    html += `
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 1rem;">
+                    <button class="btn btn-primary" onclick="syncSingleBookFromDetail('${book.abs_id}')">🔄 Sync Now</button>
+                    <button class="btn btn-secondary" onclick="openBookConfigModal('${book.abs_id}')">⚙️ Settings</button>
+                    <button class="btn btn-secondary" onclick="openBookMappingModal('${book.abs_id}')">🔗 Mapping</button>
+                    <button class="btn btn-secondary" onclick="this.closest('div').parentElement.style.display='none'">Close</button>
+                </div>
+            </div>
+        </div>`;
+
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+// Sync single book
+async function syncSingleBook(absBookId) {
+    if (!libraryState.profileId) return;
+
+    if (!confirm('Sync this book?')) return;
+
+    try {
+        app.showToast('Syncing...', 'info');
+        const response = await fetch(`/api/profiles/${libraryState.profileId}/books/${absBookId}/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dry_run: false })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            app.showToast('Book synced successfully!', 'success');
+            loadLibraryBooks();
+        } else {
+            app.showToast(data.error || 'Sync failed', 'error');
+        }
+    } catch (error) {
+        console.error('Sync error:', error);
+        app.showToast('Sync failed', 'error');
+    }
+}
+
+// Sync single book from detail modal
+async function syncSingleBookFromDetail(absBookId) {
+    await syncSingleBook(absBookId);
+    document.querySelectorAll('[id="book-detail-modal"]').forEach(el => el.style.display = 'none');
+}
+
+// Sync all books
+async function syncAllBooks() {
+    if (!libraryState.profileId) return;
+
+    if (!confirm('Sync all books? This may take a while.')) return;
+
+    try {
+        app.showToast('Starting batch sync...', 'info');
+        const response = await fetch(`/api/profiles/${libraryState.profileId}/books/sync-batch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dry_run: false })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            app.showToast(`Synced ${data.data.synced_count} books!`, 'success');
+            loadLibraryBooks();
+        } else {
+            app.showToast(data.error || 'Batch sync failed', 'error');
+        }
+    } catch (error) {
+        console.error('Batch sync error:', error);
+        app.showToast('Batch sync failed', 'error');
+    }
+}
+
+// Collect from ABS
+async function collectABSBooks() {
+    if (!libraryState.profileId) return;
+
+    if (!confirm('Collect books from AudiobookShelf? This may take a while.')) return;
+
+    try {
+        app.showToast('Collecting from ABS...', 'info');
+        const response = await fetch(`/api/profiles/${libraryState.profileId}/collect/abs`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            app.showToast(`Collected ${data.data.collected_count} books from ABS!`, 'success');
+            loadLibraryBooks();
+        } else {
+            app.showToast(data.error || 'Collection failed', 'error');
+        }
+    } catch (error) {
+        console.error('Collection error:', error);
+        app.showToast('Collection failed', 'error');
+    }
+}
+
+// Collect from Hardcover
+async function collectHardcoverBooks() {
+    if (!libraryState.profileId) return;
+
+    if (!confirm('Collect books from Hardcover? This may take a while.')) return;
+
+    try {
+        app.showToast('Collecting from Hardcover...', 'info');
+        const response = await fetch(`/api/profiles/${libraryState.profileId}/collect/hardcover`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            app.showToast(`Collected ${data.data.collected_count} books from Hardcover!`, 'success');
+            loadLibraryBooks();
+        } else {
+            app.showToast(data.error || 'Collection failed', 'error');
+        }
+    } catch (error) {
+        console.error('Collection error:', error);
+        app.showToast('Collection failed', 'error');
+    }
+}
+
+// Pagination functions
+function previousPage() {
+    if (libraryState.currentPage > 1) {
+        libraryState.currentPage--;
+        loadLibraryBooks();
+    }
+}
+
+function nextPage() {
+    libraryState.currentPage++;
+    loadLibraryBooks();
+}
+
+// Apply library filter (search)
+async function applyLibraryFilter() {
+    // This would be called on search input - for now just reload
+    loadLibraryBooks();
+}
+
+// Open book config modal
+function openBookConfigModal(absBookId) {
+    document.getElementById('book-config-modal').style.display = 'block';
+    document.getElementById('book-config-abs-id').value = absBookId;
+    document.getElementById('book-config-profile-id').value = libraryState.profileId;
+    
+    // Load book title
+    if (libraryState.currentBookDetail) {
+        document.getElementById('book-config-title').textContent = escapeHtml(libraryState.currentBookDetail.abs_title);
+    }
+}
+
+// Close book config modal
+function closeBookConfigModal() {
+    document.getElementById('book-config-modal').style.display = 'none';
+}
+
+// Open book mapping modal
+function openBookMappingModal(absBookId) {
+    document.getElementById('book-mapping-modal').style.display = 'block';
+    document.getElementById('mapping-abs-id').value = absBookId;
+    document.getElementById('mapping-profile-id').value = libraryState.profileId;
+    
+    if (libraryState.currentBookDetail) {
+        document.getElementById('mapping-book-title').textContent = `AudiobookShelf Book: ${escapeHtml(libraryState.currentBookDetail.abs_title)}`;
+    }
+}
+
+// Close book mapping modal
+function closeBookMappingModal() {
+    document.getElementById('book-mapping-modal').style.display = 'none';
+}
+
+// HTML escape helper
+function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+// Load profiles into profile selector when library tab is shown
+function loadLibraryProfiles() {
+    if (app && app.users && app.users.length > 0) {
+        const select = document.getElementById('library-profile-select');
+        if (select) {
+            app.users.forEach(user => {
+                if (!Array.from(select.options).find(opt => opt.value === user.id)) {
+                    const option = document.createElement('option');
+                    option.value = user.id;
+                    option.text = user.name || user.id;
+                    select.appendChild(option);
+                }
+            });
+        }
+    }
+}
+
+// Switch to Library tab for a specific profile
+function viewProfileLibrary(profileId) {
+    libraryState.profileId = profileId;
+    libraryState.currentPage = 1;
+    showTab('library');
+    
+    // Set the profile selector to the right profile
+    const select = document.getElementById('library-profile-select');
+    if (select) {
+        select.value = profileId;
+        setTimeout(() => loadLibraryBooks(), 100);
+    }
+}
+
+// Update showTab to handle library tab
+const originalShowTab = SyncProfileApp.prototype.showTab;
+SyncProfileApp.prototype.showTab = function(tabName) {
+    originalShowTab.call(this, tabName);
+    if (tabName === 'library') {
+        loadLibraryProfiles();
+    }
+};

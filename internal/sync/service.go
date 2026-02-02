@@ -52,6 +52,12 @@ type BookNotFoundInfo struct {
 }
 
 // Service handles the synchronization between Audiobookshelf and Hardcover
+// BookSyncLogger is an interface for logging book sync operations
+// This allows the sync service to log book syncs without depending on the database package directly
+type BookSyncLogger interface {
+	LogBookSync(profileID, audiobookID, title, author, status, targetStatus string, progress float64, hardcoverID *int64, editionID *string, errorMsg string) error
+}
+
 type Service struct {
 	audiobookshelf      audiobookshelf.AudiobookshelfClientInterface
 	hardcover           hardcover.HardcoverClientInterface
@@ -69,6 +75,8 @@ type Service struct {
 	// Per-run guard to prevent duplicate read inserts
 	createdReadsThisRun map[int64]struct{}
 	createdReadsMutex   sync.Mutex
+	bookSyncLogger      BookSyncLogger                   // Optional logger for book sync operations
+	profileID           string                           // Profile ID for book sync logging
 }
 
 // Config is the configuration type for the sync service
@@ -137,6 +145,33 @@ func NewService(absClient *audiobookshelf.Client, hcClient hardcover.HardcoverCl
 	}
 
 	return svc, nil
+}
+
+// SetBookSyncLogger sets the book sync logger for logging individual book sync operations
+func (s *Service) SetBookSyncLogger(logger BookSyncLogger) {
+	s.bookSyncLogger = logger
+}
+
+// SetProfileID sets the profile ID for book sync logging
+func (s *Service) SetProfileID(profileID string) {
+	s.profileID = profileID
+}
+
+// logBookSync logs a book sync operation if a logger is configured
+func (s *Service) logBookSync(audiobookID, title, author, status, targetStatus string, progress float64, hardcoverID *int64, editionID *string, errorMsg string) {
+	if s.bookSyncLogger == nil {
+		return
+	}
+	profileID := s.profileID
+	if profileID == "" {
+		profileID = "default"
+	}
+	if err := s.bookSyncLogger.LogBookSync(profileID, audiobookID, title, author, status, targetStatus, progress, hardcoverID, editionID, errorMsg); err != nil {
+		s.log.Debug("Failed to log book sync", map[string]interface{}{
+			"audiobook_id": audiobookID,
+			"error":        err.Error(),
+		})
+	}
 }
 
 // getASINFromCache retrieves a cached ASIN lookup result
@@ -864,8 +899,8 @@ func (s *Service) processBook(ctx context.Context, book models.AudiobookshelfBoo
 	}()
 
 	bookLog.Debug("Starting book processing")
-	// Mark as processed by default, will be set to false if there's an error
-	bookProcessed = true
+	// Default to NOT processed - only set true when we actually sync to Hardcover
+	bookProcessed = false
 
 	// Media type filtering: skip ebooks unless explicitly enabled
 	mediaType := strings.ToLower(book.MediaType)
@@ -908,7 +943,20 @@ func (s *Service) processBook(ctx context.Context, book models.AudiobookshelfBoo
 		bookLog.Debug("Skipping unstarted book (ProcessUnreadBooks is false)", map[string]interface{}{
 			"current_time": book.Progress.CurrentTime,
 		})
-		bookProcessed = true // Count as processed since we made a decision to skip
+		
+		// Create preliminary state key and update state to mark this book as processed
+		// so we don't recount it on the next sync
+		preliminaryStateKey := book.ID
+		if updated := s.state.UpdateBook(preliminaryStateKey, 0.0, "SKIPPED_UNREAD"); updated {
+			bookLog.Debug("Updated book state to SKIPPED_UNREAD", map[string]interface{}{
+				"progress": 0.0,
+			})
+		}
+		
+		// Log book sync for tracking
+		s.logBookSync(book.ID, bookTitle, authorName, "SKIPPED", "", 0.0, nil, nil, "ProcessUnreadBooks is disabled")
+		
+		bookProcessed = false // Skipped books should NOT count as synced
 		return nil
 	}
 
@@ -1120,8 +1168,8 @@ func (s *Service) processBook(ctx context.Context, book models.AudiobookshelfBoo
 			)
 			bookLog.Info("Book found by title/author - recorded as mismatch (with enrichment)")
 
-			// Set the book as processed
-			bookProcessed = true
+			// Set the book as NOT processed since it's a mismatch
+			bookProcessed = false
 
 			// Return early as we don't need to process this book further
 			return nil
@@ -1131,12 +1179,12 @@ func (s *Service) processBook(ctx context.Context, book models.AudiobookshelfBoo
 			bookLog.Warn("Book not found in Hardcover", map[string]interface{}{
 				"error": findErr.Error(),
 			})
-			bookProcessed = true // Still count as processed even if not found
+			bookProcessed = false // Not found books should NOT count as synced
 			return nil
 		}
 	} else if hcBook != nil {
-		// Book was found successfully
-		bookProcessed = true
+		// Book was found successfully - will be processed below
+		// Don't set bookProcessed here, let the actual sync operations set it
 		if hcBook.EditionID != "" {
 			editionID = hcBook.EditionID
 		}
@@ -1341,7 +1389,7 @@ func (s *Service) processBook(ctx context.Context, book models.AudiobookshelfBoo
 			"progress":         progress,
 			"minimum_progress": s.config.Sync.MinimumProgress,
 		})
-		bookProcessed = true // Count as processed since we made a decision to skip
+		bookProcessed = false // Skipped books should NOT count as synced
 		return nil
 	}
 
@@ -1572,7 +1620,11 @@ func (s *Service) processBook(ctx context.Context, book models.AudiobookshelfBoo
 				"progress": progressPct,
 			})
 		}
-		bookProcessed = true // Count as processed since we recorded a not-found state
+		
+		// Log book sync for tracking
+		s.logBookSync(book.ID, bookTitle, authorName, "NOT_FOUND", "", progressPct, nil, nil, errMsg)
+		
+		bookProcessed = false // Not found books should NOT count as synced
 		return nil
 	}
 
@@ -1628,7 +1680,7 @@ func (s *Service) processBook(ctx context.Context, book models.AudiobookshelfBoo
 			book.ID,
 			s.hardcover, // Pass the Hardcover client for publisher lookup
 		)
-		bookProcessed = true // Count as processed since we recorded a mismatch
+		bookProcessed = false // Mismatches should NOT count as synced
 		return nil
 	}
 
@@ -1636,6 +1688,32 @@ func (s *Service) processBook(ctx context.Context, book models.AudiobookshelfBoo
 	bookLog.Debug("Looking up or creating user book ID for edition", map[string]interface{}{
 		"edition_id": editionID,
 	})
+
+	// If status is empty (0% progress with SyncWantToRead disabled), skip and update state
+	if status == "" {
+		bookLog.Debug("Skipping book with 0% progress (SyncWantToRead is disabled)", map[string]interface{}{
+			"edition_id": editionID,
+		})
+		
+		// Update state to mark this book as processed
+		progressPct := 0.0
+		if book.Media.Duration > 0 {
+			progressPct = (book.Progress.CurrentTime / book.Media.Duration) * 100
+		}
+		stateKey := book.ID + ":" + editionID
+		if updated := s.state.UpdateBook(stateKey, progressPct, "SKIPPED_WANT_TO_READ"); updated {
+			bookLog.Debug("Updated book state to SKIPPED_WANT_TO_READ", map[string]interface{}{
+				"progress": progressPct,
+			})
+		}
+		
+		// Log book sync for tracking
+		editionIDPtr := &editionID
+		s.logBookSync(book.ID, bookTitle, authorName, "SKIPPED", "", progressPct, nil, editionIDPtr, "SyncWantToRead is disabled for 0% progress")
+		
+		bookProcessed = false // Skipped books should NOT count as synced
+		return nil
+	}
 
 	// Find or create a user book ID for this edition with the determined status
 	userBookID, err := s.findOrCreateUserBookID(ctx, editionID, status)
@@ -1673,10 +1751,16 @@ func (s *Service) processBook(ctx context.Context, book models.AudiobookshelfBoo
 			bookLog.Error("Failed to handle finished book", map[string]interface{}{
 				"error": err,
 			})
+			// Log error
+			editionIDPtr := &editionID
+			s.logBookSync(book.ID, bookTitle, authorName, "ERROR", status, progress, nil, editionIDPtr, err.Error())
 			return fmt.Errorf("error handling finished book: %w", err)
 		}
 		bookProcessed = true
 		bookLog.Info("Successfully processed finished book")
+		// Log successful sync
+		editionIDPtr := &editionID
+		s.logBookSync(book.ID, bookTitle, authorName, "SYNCED", status, progress, nil, editionIDPtr, "")
 
 	case "IN_PROGRESS", "READING":
 		// Handle in-progress book
@@ -1690,10 +1774,16 @@ func (s *Service) processBook(ctx context.Context, book models.AudiobookshelfBoo
 			bookLog.Error("Failed to handle in-progress book", map[string]interface{}{
 				"error": err,
 			})
+			// Log error
+			editionIDPtr := &editionID
+			s.logBookSync(book.ID, bookTitle, authorName, "ERROR", status, progress, nil, editionIDPtr, err.Error())
 			return fmt.Errorf("error handling in-progress book: %w", err)
 		}
 		bookLog.Info("Successfully processed in-progress book")
 		bookProcessed = true
+		// Log successful sync
+		editionIDPtr := &editionID
+		s.logBookSync(book.ID, bookTitle, authorName, "SYNCED", status, progress, nil, editionIDPtr, "")
 		return nil
 
 	default:
@@ -1702,6 +1792,9 @@ func (s *Service) processBook(ctx context.Context, book models.AudiobookshelfBoo
 		bookLog.Info("Successfully processed book with status", map[string]interface{}{
 			"status": status,
 		})
+		// Log successful sync
+		editionIDPtr := &editionID
+		s.logBookSync(book.ID, bookTitle, authorName, "SYNCED", status, progress, nil, editionIDPtr, "")
 	}
 
 	return nil

@@ -3,103 +3,195 @@
 ## Project Overview
 This is a Go application that syncs reading progress and book data between AudiobookShelf and Hardcover. It uses GraphQL for Hardcover API interactions and REST for AudiobookShelf.
 
+## Architecture Overview
+
+### Core Design: Store-Compare-Sync
+The application follows a "store-compare-sync" pattern:
+1. **Collect** - Fetch book data from ABS and Hardcover, store in local database
+2. **Compare** - Query database to compare progress between sources
+3. **Sync** - Update Hardcover when differences detected, respecting conflict resolution rules
+
+### Key Components
+- **Database Layer** (`internal/database/`) - SQLite with GORM, stores books, mappings, history
+- **Collectors** (`internal/sync/`) - `ABSCollector` and `HCCollector` fetch data into database
+- **Sync Service** (`internal/sync/service.go`) - Orchestrates sync operations from database
+- **API Layer** (`internal/api/`) - REST endpoints for web UI
+- **Web UI** (`web/static/`) - Profile management, book library, sync controls
+
+### Database Models
+- `ABSBook` - AudiobookShelf book data with progress
+- `HardcoverUserBook` - Hardcover user_book data with progress
+- `BookMapping` - Links ABS books to Hardcover editions with match confidence
+- `ProgressHistory` - Timestamped progress snapshots for tracking changes
+- `SyncEvent` - Audit log of sync operations
+- `BookSyncConfig` - Per-book sync settings (override profile defaults)
+- `SyncProfile` - Multi-user profile with encrypted tokens
+- `BookSyncLog` - Legacy sync log (kept for compatibility)
+
+### Data Flow
+```
+ABS API ──▶ ABSCollector ──▶ ABSBook table
+                                   │
+                                   ▼
+                            BookMapping table ◀── Auto-match (ASIN/ISBN/title)
+                                   │
+                                   ▼
+HC API ◀── HCCollector ◀── HardcoverUserBook table
+                │
+                ▼
+         SyncService.SyncFromDatabase()
+                │
+                ▼
+         ProgressHistory + SyncEvent (audit trail)
+```
+
 ## Development Guidelines
 
 ### Code Structure
-- `main.go` - Entry point and version info
-- `config.go` - Environment variable configuration with getter functions
-- `sync.go` - Core synchronization logic
-- `hardcover.go` - Hardcover GraphQL API interactions
-- `audiobookshelf.go` - AudiobookShelf REST API interactions
-- `types.go` - Data structures and type definitions
-- `utils.go` - Utility functions
-- `incremental.go` - Incremental sync functionality
-- `mismatch.go` - Mismatch detection and collection features
-- `enhanced_progress_detection.go` - Enhanced progress detection using `/api/me` endpoint
-- `docs/` - Documentation for specific features and fixes
-- `mismatches/` - can be ignored
+- `cmd/audiobookshelf-hardcover-sync/` - Main entry point
+- `internal/api/` - HTTP handlers and API layer
+- `internal/api/audiobookshelf/` - ABS REST client
+- `internal/api/hardcover/` - Hardcover GraphQL client
+- `internal/config/` - Configuration loading
+- `internal/database/` - GORM models and repository
+- `internal/sync/` - Sync service, collectors, state management
+- `internal/multiuser/` - Multi-profile orchestration
+- `internal/logger/` - Structured logging
+- `web/static/` - Web UI assets (HTML, CSS, JS)
+- `docs/` - Feature documentation
 
-### API definitions
+### API Definitions
 
-- Use GraphQL for Hardcover API, see `hardcover-schema.graphql` for schema definitions
-- Use REST for AudiobookShelf API, documented in `audiobookshelf-openapi.json`
-- AudiobookShelf git project https://github.com/advplyr/audiobookshelf/tree/master and (outdated) API docs https://api.audiobookshelf.org/
-- **Important**: Hardcover ownership is stored in the `lists` table (via "Owned" list), NOT in `user_books.owned` field
-- The `user_books.owned` field is unreliable and always returns `false` - use `getOwnedBooks()` and `isBookOwnedDirect()` functions instead
-- **Enhanced Progress Detection**: Uses `/api/me` endpoint for accurate finished book detection with `isFinished` flags
-- **RE-READ Detection Logic**: Fixed to check `isBookFinished` status before treating books as re-read scenarios to prevent false positives
+- Use GraphQL for Hardcover API, see `docs/hardcover-schema.graphql` for schema
+- Use REST for AudiobookShelf API, documented in `docs/openapi.yaml`
+- AudiobookShelf git project https://github.com/advplyr/audiobookshelf/tree/master
 
 #### Hardcover API Limitations
-- API tokens automatically expire after 1 year, and reset on January 1st.
-- API is rate-limited to 60 requests per minute.
-- The following queries are disabled:
-    - _like
-    - _nlike
-    - _ilike
-    - _niregex
-    - _nregex
-    - _iregex
-    - _regex
-    - _nsimilar
-    - _similar
-    - Queries have a max timeout of 30 seconds.
-    - Queries have a maximum depth of 3.
+- API is rate-limited to **60 requests per minute** - use token bucket rate limiter
+- API tokens expire after 1 year, reset on January 1st
+- Query timeout: 30 seconds
+- Query depth limit: 3
+- Disabled operators: `_like`, `_ilike`, `_regex`, `_similar` and variants
+- **Important**: Ownership stored in `lists` table (via "Owned" list), NOT `user_books.owned`
+
+#### Rate Limiting Strategy
+- Use 50 req/min limit (buffer for concurrent operations)
+- `HCCollector` implements token bucket rate limiter
+- Batch operations with progress reporting
+- Stale data detection: only refresh books not fetched in configurable interval
+
+### Database Patterns
+
+#### Models Location
+All models in `internal/database/models.go`. Use GORM tags for schema.
+
+#### Repository Pattern
+- CRUD methods in `internal/database/repository.go`
+- Use bulk upsert with `ON CONFLICT` for efficient updates
+- Return errors, let caller decide how to handle
+
+#### Indexes
+Add indexes for frequently queried columns:
+```go
+type ABSBook struct {
+    // ...
+    ProfileID string `gorm:"index:idx_abs_profile_id"`
+    ABSID     string `gorm:"index:idx_abs_id;uniqueIndex:idx_profile_abs_unique,priority:2"`
+}
+```
+
+#### History Retention
+- Keep 30 days OR 100 entries per book (whichever is larger)
+- Implement `PurgeOldHistory()` with proper WHERE clause
+
+### Sync Patterns
+
+#### Conflict Resolution
+Profile-level setting with per-book overrides:
+- `prefer_abs` - Always use ABS progress (default)
+- `prefer_newest` - Use whichever is more recent
+- `prefer_hardcover` - Always use Hardcover progress
+- `manual` - Skip and flag for user review
+
+#### "In Sync" Detection
+Books considered "in sync" if progress differs by less than threshold (default 1% or 60 seconds).
+
+#### Single Book Sync
+```go
+func (s *Service) SyncSingleBook(ctx context.Context, absBookID string, force bool) error
+```
+
+#### Batch Sync
+```go
+func (s *Service) SyncBatch(ctx context.Context, absBookIDs []string) error
+```
 
 ### Testing
 - All new features should include comprehensive test coverage
 - Use `go test -v ./...` to run all tests
-- Test files follow Go conventions with pattern `*_test.go` in the root directory (same package as source)
-- Current test files: `main_test.go`, `format_test.go`, `incremental_test.go`, `owned_test.go`, `owned_flag_test.go`, `want_to_read_test.go`, `reading_history_fix_test.go`
-- Tests include unit tests, integration tests, and configuration validation
-- Use table-driven tests and subtests for comprehensive coverage
+- Test files: `*_test.go` in same package as source
+- Use table-driven tests and subtests
+- Mock external APIs using interfaces
+- Test database operations with in-memory SQLite
 
-### Environment Configuration
-- All configuration uses environment variables
-- Add getter functions in `config.go` for new env vars (e.g., `getSyncOwned()`)
-- Use sensible defaults and document in README.md
-- Environment variables should follow pattern: `SYNC_*`, `HARDCOVER_*`, `AUDIOBOOKSHELF_*`
+### Web UI Patterns
+
+#### API Response Format
+```json
+{
+  "success": true,
+  "data": { ... },
+  "error": "optional error message"
+}
+```
+
+#### Pagination
+```json
+{
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "limit": 50,
+    "total": 1027,
+    "total_pages": 21
+  }
+}
+```
+
+#### Book Library UI
+- Show side-by-side ABS vs HC progress
+- Color coding: green (in sync), yellow (minor diff), red (major diff), gray (not matched)
+- Support multi-select for batch operations
+- Lazy load book details on expand
 
 ### Release Process
-- We use git tags for releases (semantic versioning: v1.2.3)
-- Pipeline builds and publishes releases based on tags
-- Also publishes beta versions from main branch
-- Use `gh` tool to create GitHub releases with detailed release notes
-- Update version in `main.go` and add changelog entry in `CHANGELOG.md`
-- Release workflow: commit → push → create tag → push tag → create GitHub release
+- Semantic versioning: v1.2.3
+- Update version in `cmd/audiobookshelf-hardcover-sync/main.go`
+- Update `CHANGELOG.md`
+- Tag and push: `git tag v1.2.3 && git push origin v1.2.3`
+- Create GitHub release with `gh release create`
 
 ### Makefile Tasks
-- `make build` - Build the binary with version info
-- `make run` - Build and run locally  
+- `make build` - Build binary with version info
+- `make run` - Build and run locally
 - `make test` - Run all tests
 - `make lint` - Run linting tools
 - `make docker-build` - Build Docker image
 - `make docker-run` - Run in Docker container
 
-### Code Patterns
-- Configuration functions in `config.go` should handle env vars with defaults
-- GraphQL operations in `hardcover.go` use structured queries
-- Error handling should be comprehensive with proper logging
-- New sync features should be configurable via environment variables
-- Follow existing patterns for API interactions and data mapping
-- Follow idiomatic Go conventions (https://go.dev/doc/effective_go).
-- Use named functions over long anonymous ones.
-- Organize logic into small, composable functions.
-- Prefer interfaces for dependencies to enable mocking and testing.
-- Use gofmt or goimports to enforce formatting.
-- Avoid unnecessary abstraction; keep things simple and readable.
-
-### Iteration & Review
-
-- Review Copilot output before committing.
-- Refactor generated code to ensure readability and testability.
-- Use comments to give Copilot context for better suggestions.
-- Regenerate parts that are unidiomatic or too complex.
+### Code Style
+- Follow idiomatic Go conventions (https://go.dev/doc/effective_go)
+- Use named functions over long anonymous ones
+- Organize logic into small, composable functions
+- Prefer interfaces for dependencies to enable mocking
+- Use gofmt or goimports to enforce formatting
+- Avoid unnecessary abstraction; keep things simple
 
 ### Documentation
-- Keep README.md updated with new features and environment variables
+- Keep README.md updated with new features
 - Update CHANGELOG.md for all releases
 - Document configuration options thoroughly
-- Include usage examples and troubleshooting guidance
+- Feature docs in `docs/` directory
 
 ### Docker & Deployment
 - Multi-stage Docker build with scratch base image
