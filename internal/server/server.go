@@ -93,6 +93,7 @@ func New(addr string, multiUserService *multiuser.MultiUserService, authService 
 	apiMux.HandleFunc("POST /profiles/{id}/books/sync-batch", s.handleAPILibrarySyncBatch)
 	apiMux.HandleFunc("POST /profiles/{id}/collect/abs", s.handleAPILibraryCollectABS)
 	apiMux.HandleFunc("POST /profiles/{id}/collect/hardcover", s.handleAPILibraryCollectHC)
+	apiMux.HandleFunc("GET /profiles/{id}/sync-summary", s.handleAPILibrarySyncSummary)
 	apiMux.HandleFunc("GET /profiles/{id}/library-summary", s.handleAPILibrarySummary)
 	apiMux.HandleFunc("GET /profiles/{id}/books/{absBookId}/history", s.handleAPILibraryProgressHistory)
 	apiMux.HandleFunc("POST /profiles/{id}/books/{absBookId}/mapping", s.handleAPILibraryCreateMapping)
@@ -472,6 +473,10 @@ func (s *Server) handleAPILibraryCollectHC(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleAPILibrarySummary(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.GetSyncSummaryHandler(w, r)
+}
+
+func (s *Server) handleAPILibrarySyncSummary(w http.ResponseWriter, r *http.Request) {
 	s.libraryAPI.GetSyncSummaryHandler(w, r)
 }
 
