@@ -68,6 +68,12 @@ func NewMultiUserService(repo *database.Repository, globalConfig *config.Config,
 	}
 }
 
+// GetRepository returns the database repository for direct access
+// Used by library API handlers that need direct database queries
+func (s *MultiUserService) GetRepository() *database.Repository {
+	return s.repository
+}
+
 // ListProfiles returns all active sync profiles
 func (s *MultiUserService) ListProfiles() ([]database.SyncProfile, error) {
 	return s.repository.ListProfiles()

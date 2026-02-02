@@ -21,6 +21,9 @@ func NewLibraryAPI(repository *database.Repository) *LibraryAPI {
 	}
 }
 
+// Exported for use in server.go
+var _ interface{} = (*LibraryAPI)(nil)
+
 // PaginationInfo holds pagination details
 type PaginationInfo struct {
 	Page       int `json:"page"`
@@ -75,18 +78,22 @@ func (api *LibraryAPI) GetBooksHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalPages := (total + limit - 1) / limit
+	totalPages := (int(total) + limit - 1) / limit
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(APIResponse{
-		Success: true,
-		Data:    comparisons,
-		Pagination: PaginationInfo{
+	// Wrap data with pagination info
+	responseData := map[string]interface{}{
+		"items": comparisons,
+		"pagination": PaginationInfo{
 			Page:       page,
 			Limit:      limit,
-			Total:      total,
+			Total:      int(total),
 			TotalPages: totalPages,
 		},
+	}
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data:    responseData,
 	})
 }
 
@@ -300,18 +307,22 @@ func (api *LibraryAPI) GetProgressHistoryHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
-	totalPages := (total + limit - 1) / limit
+	totalPages := (int(total) + limit - 1) / limit
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(APIResponse{
-		Success: true,
-		Data:    history,
-		Pagination: PaginationInfo{
+	// Wrap data with pagination info
+	responseData := map[string]interface{}{
+		"items": history,
+		"pagination": PaginationInfo{
 			Page:       page,
 			Limit:      limit,
-			Total:      total,
+			Total:      int(total),
 			TotalPages: totalPages,
 		},
+	}
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data:    responseData,
 	})
 }
 
