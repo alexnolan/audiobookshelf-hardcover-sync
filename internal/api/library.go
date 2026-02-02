@@ -81,19 +81,17 @@ func (api *LibraryAPI) GetBooksHandler(w http.ResponseWriter, r *http.Request) {
 	totalPages := (int(total) + limit - 1) / limit
 
 	w.WriteHeader(http.StatusOK)
-	// Wrap data with pagination info
-	responseData := map[string]interface{}{
-		"items": comparisons,
+	// Return response matching frontend expectations:
+	// data = books array, pagination at top level
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"data":    comparisons,
 		"pagination": PaginationInfo{
 			Page:       page,
 			Limit:      limit,
 			Total:      int(total),
 			TotalPages: totalPages,
 		},
-	}
-	json.NewEncoder(w).Encode(APIResponse{
-		Success: true,
-		Data:    responseData,
 	})
 }
 
