@@ -24,6 +24,7 @@ Automatically syncs your Audiobookshelf library with Hardcover, including readin
 - **⬆️ Automatic Migration**: Seamless upgrade from single-profile setups
 - **🔙 Backwards Compatible**: All existing functionality preserved
 - **🚀 Cache Busting**: Automatic cache invalidation ensures profiles always get the latest UI updates
+- **📚 Book Library Management** (Development): Store-compare-sync architecture for per-book control with conflict resolution strategies
 
 ### Quick Start (Multi-User)
 
@@ -852,6 +853,20 @@ If you're experiencing issues with configuration:
 - Check `sync.min_progress` setting (default: 0.01 = 1%)
 - Verify incremental sync is working properly
 - Enable debug logging to see detailed progress calculations
+
+## Development Features
+
+### Book Library Rearchitecture (In Development)
+
+The project includes a new **Store-Compare-Sync** architecture for enhanced book library management:
+
+- **Database-Driven Sync**: Books from both AudiobookShelf and Hardcover are stored locally for detailed comparison
+- **Auto-Matching**: ASIN (99% confidence) and ISBN (95% confidence) based automatic mapping
+- **Conflict Resolution**: Multiple strategies (prefer_abs, prefer_hardcover, prefer_newest, manual review)
+- **Progress Tracking**: Historical progress snapshots and sync event audit trails
+- **Per-Book Control**: Individual sync configuration per book with profile-level defaults
+
+For detailed documentation, see [docs/IMPLEMENTATION_COMPLETE.md](docs/IMPLEMENTATION_COMPLETE.md)
 
 ### Getting Help
 For additional support:
