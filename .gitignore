@@ -43,6 +43,17 @@ go.work.sum
 /mismatches/
 /debug/
 
+# Database and cache (should not be committed)
+*.db
+*.db-shm
+*.db-wal
+/cache/
+/data/
+*.key
+encryption.key
+asin_cache.json
+user_book_cache.json
+
 # Backup files
 *.backup*
 *.bak
