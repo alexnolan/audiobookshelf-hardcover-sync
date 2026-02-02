@@ -20,6 +20,7 @@ type Server struct {
 	server           *http.Server
 	multiUserService *multiuser.MultiUserService
 	apiHandler       *api.Handler
+	libraryAPI       *api.LibraryAPI
 	authService      *auth.AuthService
 	authHandlers     *auth.AuthHandlers
 	authMiddleware   *auth.AuthMiddleware
@@ -31,6 +32,9 @@ type Server struct {
 func New(addr string, multiUserService *multiuser.MultiUserService, authService *auth.AuthService, syncService api.SyncService, log *logger.Logger) *Server {
 	apiHandler := api.NewHandler(multiUserService, syncService, log)
 	
+	// Initialize library API with repository access
+	libraryAPI := api.NewLibraryAPI(multiUserService.GetRepository())
+	
 	// Initialize authentication handlers and middleware
 	authHandlers := auth.NewAuthHandlers(authService, log)
 	authMiddleware := authService.GetMiddleware()
@@ -41,6 +45,7 @@ func New(addr string, multiUserService *multiuser.MultiUserService, authService 
 		},
 		multiUserService: multiUserService,
 		apiHandler:       apiHandler,
+		libraryAPI:       libraryAPI,
 		authService:      authService,
 		authHandlers:     authHandlers,
 		authMiddleware:   authMiddleware,
@@ -80,6 +85,18 @@ func New(addr string, multiUserService *multiuser.MultiUserService, authService 
 	apiMux.HandleFunc("GET /profiles/{id}/summary", s.handleAPISummary)  // Add summary endpoint
 	apiMux.HandleFunc("GET /profiles/{id}/book-syncs", s.handleAPIBookSyncLogs)  // Book sync logs endpoint
 	apiMux.HandleFunc("GET /profiles/{id}/book-syncs/{audiobookId}", s.handleAPIBookSyncLog)  // Single book sync log
+	
+	// Library API routes (new rearchitecture)
+	apiMux.HandleFunc("GET /profiles/{id}/books", s.handleAPILibraryBooks)
+	apiMux.HandleFunc("GET /profiles/{id}/books/{absBookId}", s.handleAPILibraryBook)
+	apiMux.HandleFunc("POST /profiles/{id}/books/{absBookId}/sync", s.handleAPILibrarySyncBook)
+	apiMux.HandleFunc("POST /profiles/{id}/books/sync-batch", s.handleAPILibrarySyncBatch)
+	apiMux.HandleFunc("POST /profiles/{id}/collect/abs", s.handleAPILibraryCollectABS)
+	apiMux.HandleFunc("POST /profiles/{id}/collect/hardcover", s.handleAPILibraryCollectHC)
+	apiMux.HandleFunc("GET /profiles/{id}/library-summary", s.handleAPILibrarySummary)
+	apiMux.HandleFunc("GET /profiles/{id}/books/{absBookId}/history", s.handleAPILibraryProgressHistory)
+	apiMux.HandleFunc("POST /profiles/{id}/books/{absBookId}/mapping", s.handleAPILibraryCreateMapping)
+	apiMux.HandleFunc("DELETE /profiles/{id}/books/{absBookId}/mapping", s.handleAPILibraryDeleteMapping)
 
 	// Mount API routes under /api with auth middleware
 	handler.Handle("/api/", s.authMiddleware.RequireAuth(http.StripPrefix("/api", apiMux)))
@@ -427,6 +444,47 @@ func (s *Server) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 	
 	// Serve the file
 	http.ServeFile(w, r, fullPath)
+}
+
+// Library API handlers (new rearchitecture)
+func (s *Server) handleAPILibraryBooks(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.GetBooksHandler(w, r)
+}
+
+func (s *Server) handleAPILibraryBook(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.GetBookHandler(w, r)
+}
+
+func (s *Server) handleAPILibrarySyncBook(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.SyncBookHandler(w, r)
+}
+
+func (s *Server) handleAPILibrarySyncBatch(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.SyncBatchHandler(w, r)
+}
+
+func (s *Server) handleAPILibraryCollectABS(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.CollectABSBooksHandler(w, r)
+}
+
+func (s *Server) handleAPILibraryCollectHC(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.CollectHCBooksHandler(w, r)
+}
+
+func (s *Server) handleAPILibrarySummary(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.GetSyncSummaryHandler(w, r)
+}
+
+func (s *Server) handleAPILibraryProgressHistory(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.GetProgressHistoryHandler(w, r)
+}
+
+func (s *Server) handleAPILibraryCreateMapping(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.CreateBookMappingHandler(w, r)
+}
+
+func (s *Server) handleAPILibraryDeleteMapping(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.DeleteBookMappingHandler(w, r)
 }
 
 // handleAPIBookSyncLogs wraps the handler
