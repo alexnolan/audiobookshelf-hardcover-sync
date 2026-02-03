@@ -346,24 +346,33 @@ class SyncProfileApp {
             });
         });
 
-        // Add profile form
-        document.getElementById('add-user-form').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleAddProfile(e);
-        });
+        // Add profile form (inline version)
+        const addUserForm = document.getElementById('inline-add-user-form');
+        if (addUserForm) {
+            addUserForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                handleAddUser(e); // Use the global handler
+            });
+        }
 
         // Edit profile form
-        document.getElementById('edit-user-form').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleEditProfile(e);
-        });
+        const editUserForm = document.getElementById('edit-user-form');
+        if (editUserForm) {
+            editUserForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.handleEditProfile(e);
+            });
+        }
 
         // Modal close on background click
-        document.getElementById('edit-user-modal').addEventListener('click', (e) => {
-            if (e.target.id === 'edit-user-modal') {
-                this.closeEditModal();
-            }
-        });
+        const editModal = document.getElementById('edit-user-modal');
+        if (editModal) {
+            editModal.addEventListener('click', (e) => {
+                if (e.target.id === 'edit-user-modal') {
+                    this.closeEditModal();
+                }
+            });
+        }
     }
 
     showTab(tabName) {
