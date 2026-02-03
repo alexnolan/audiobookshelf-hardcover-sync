@@ -202,6 +202,12 @@ func (m *MockHardcoverClient) CheckBookOwnership(ctx context.Context, bookID int
 	return args.Bool(0), args.Error(1)
 }
 
+// CheckEditionOwnership is a mock implementation for the HardcoverClientInterface
+func (m *MockHardcoverClient) CheckEditionOwnership(ctx context.Context, editionID int) (bool, error) {
+	args := m.Called(ctx, editionID)
+	return args.Bool(0), args.Error(1)
+}
+
 // CheckExistingUserBookRead is a mock implementation for the HardcoverClientInterface
 func (m *MockHardcoverClient) CheckExistingUserBookRead(ctx context.Context, input hardcover.CheckExistingUserBookReadInput) (*hardcover.CheckExistingUserBookReadResult, error) {
 	args := m.Called(ctx, input)

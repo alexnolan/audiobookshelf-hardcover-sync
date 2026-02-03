@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1ad691;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#262626;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="32" height="32" rx="6" fill="#1e1e1e"/>
+  <!-- Book spine (Audiobookshelf style) -->
+  <rect x="4" y="6" width="4" height="20" rx="1" fill="#1ad691"/>
+  <!-- Book pages -->
+  <rect x="9" y="6" width="3" height="20" rx="0.5" fill="#3d3d3d"/>
+  <rect x="13" y="6" width="3" height="20" rx="0.5" fill="#4a4a4a"/>
+  <!-- Sync arrows -->
+  <path d="M20 11 L26 11 L26 8 L30 12 L26 16 L26 13 L20 13 Z" fill="#1ad691"/>
+  <path d="M26 21 L20 21 L20 24 L16 20 L20 16 L20 19 L26 19 Z" fill="#cd5c5c"/>
+</svg>

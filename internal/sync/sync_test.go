@@ -64,6 +64,15 @@ func (m *MockAudiobookshelfClient) GetListeningSessions(ctx context.Context, sin
 	return args.Get(0).([]models.AudiobookshelfBook), args.Error(1)
 }
 
+// GetCollections mocks the GetCollections method
+func (m *MockAudiobookshelfClient) GetCollections(ctx context.Context) ([]audiobookshelf.AudiobookshelfCollection, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]audiobookshelf.AudiobookshelfCollection), args.Error(1)
+}
+
 // TestSync tests the Sync function
 func TestSync(t *testing.T) {
 	// Skip this test for now until all struct issues are fixed

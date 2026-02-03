@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/api/audiobookshelf"
 	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/database"
 	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/logger"
 	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/sync"
@@ -13,6 +14,7 @@ import (
 // CollectorFactory interface for creating collectors
 type CollectorFactory interface {
 	CreateABSCollector(profileID string) (*sync.ABSCollector, error)
+	CreateABSClient(profileID string) (audiobookshelf.AudiobookshelfClientInterface, error)
 	CreateHCCollector(profileID string) (*sync.HCCollector, error)
 	GetRepository() *database.Repository
 }
@@ -48,9 +50,11 @@ type FlatBookComparison struct {
 	ABSTitle          string  `json:"abs_title"`
 	ABSAuthor         string  `json:"abs_author"`
 	ABSNarrator       string  `json:"abs_narrator,omitempty"`
+	ABSMediaType      string  `json:"abs_media_type,omitempty"` // "book" for audiobook, "ebook" for ebook
 	ABSProgress       float64 `json:"abs_progress"`
 	ABSASIN           string  `json:"abs_asin,omitempty"`
 	ABSISBN           string  `json:"abs_isbn,omitempty"`
+	ABSLastUpdated    string  `json:"abs_last_updated,omitempty"`
 	HardcoverProgress float64 `json:"hardcover_progress"`
 	ProgressDiff      float64 `json:"progress_diff"`
 	InSync            bool    `json:"in_sync"`
@@ -73,17 +77,19 @@ type FlatBookComparison struct {
 // flattenComparison converts a BookComparison to a flat structure for frontend
 func flattenComparison(comp database.BookComparison) FlatBookComparison {
 	flat := FlatBookComparison{
-		ABSID:        comp.ABSBook.ABSID,
-		ABSTitle:     comp.ABSBook.Title,
-		ABSAuthor:    comp.ABSBook.Author,
-		ABSNarrator:  comp.ABSBook.Narrator,
-		ABSProgress:  comp.ABSBook.Progress,
-		ABSASIN:      comp.ABSBook.ASIN,
-		ABSISBN:      comp.ABSBook.ISBN,
-		ProgressDiff: comp.ProgressDiff,
-		InSync:       comp.InSync,
-		SyncStatus:   comp.SyncStatus,
-		SyncEnabled:  true, // Default to enabled
+		ABSID:          comp.ABSBook.ABSID,
+		ABSTitle:       comp.ABSBook.Title,
+		ABSAuthor:      comp.ABSBook.Author,
+		ABSNarrator:    comp.ABSBook.Narrator,
+		ABSMediaType:   comp.ABSBook.MediaType,
+		ABSProgress:    comp.ABSBook.Progress,
+		ABSASIN:        comp.ABSBook.ASIN,
+		ABSISBN:        comp.ABSBook.ISBN,
+		ABSLastUpdated: comp.ABSBook.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ProgressDiff:   comp.ProgressDiff,
+		InSync:         comp.InSync,
+		SyncStatus:     comp.SyncStatus,
+		SyncEnabled:    true, // Default to enabled
 	}
 
 	// Set HC progress if mapped
@@ -151,9 +157,12 @@ func (api *LibraryAPI) GetBooksHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Parse filter options
 	filterOpts := &database.BookFilterOptions{
-		Search: r.URL.Query().Get("search"),
-		Filter: r.URL.Query().Get("filter"),
-		Sort:   r.URL.Query().Get("sort"),
+		Search:    r.URL.Query().Get("search"),
+		Filter:    r.URL.Query().Get("filter"),
+		Sort:      r.URL.Query().Get("sort"),
+		SortDir:   r.URL.Query().Get("sort_dir"),
+		MediaType: r.URL.Query().Get("media_type"),
+		LibraryID: r.URL.Query().Get("library_id"),
 	}
 
 	// Get comparisons
@@ -266,13 +275,108 @@ func (api *LibraryAPI) SyncBookHandler(w http.ResponseWriter, r *http.Request) {
 		"abs_book_id": absBookIDStr,
 	})
 
-	// Return placeholder response
+	// Get the ABS book from database
+	absBook, err := api.repository.GetABSBook(profileID, absBookIDStr)
+	if err != nil || absBook == nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "ABS book not found",
+		})
+		return
+	}
+
+	// Get the mapping for this book
+	mapping, err := api.repository.GetBookMapping(profileID, absBook.ID)
+	if err != nil || mapping == nil || mapping.HCUserBookID == nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Book is not mapped to Hardcover or has no user_book_id",
+		})
+		return
+	}
+
+	// Get HC collector
+	hcCollector, err := api.collectorFactory.CreateHCCollector(profileID)
+	if err != nil {
+		log.Error("Failed to create HC collector", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to initialize Hardcover client",
+		})
+		return
+	}
+
+	ctx := r.Context()
+
+	// Determine the target status based on progress
+	var targetStatus string
+	if absBook.Progress >= 1.0 || absBook.IsFinished {
+		targetStatus = "READ"
+	} else if absBook.Progress == 0 {
+		targetStatus = "WANT_TO_READ"
+	} else {
+		targetStatus = "READING"
+	}
+
+	// Update the user book status on Hardcover
+	err = hcCollector.UpdateUserBookStatus(ctx, *mapping.HCUserBookID, targetStatus)
+	if err != nil {
+		log.Error("Failed to update Hardcover status", map[string]interface{}{
+			"error":        err.Error(),
+			"user_book_id": *mapping.HCUserBookID,
+			"target_status": targetStatus,
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to update Hardcover status: " + err.Error(),
+		})
+		return
+	}
+
+	// Update local HardcoverUserBook record
+	statusID := 1
+	switch targetStatus {
+	case "READING":
+		statusID = 2
+	case "READ":
+		statusID = 3
+	}
+
+	hcBook, err := api.repository.GetHardcoverUserBook(profileID, *mapping.HCUserBookID)
+	if err == nil && hcBook != nil {
+		hcBook.Status = statusID
+		hcBook.StatusName = targetStatus
+		hcBook.Progress = absBook.Progress
+		hcBook.ProgressSeconds = absBook.CurrentTime
+		if err := api.repository.UpsertHardcoverUserBook(*hcBook); err != nil {
+			log.Warn("Failed to update local HardcoverUserBook", map[string]interface{}{
+				"error":        err.Error(),
+				"user_book_id": *mapping.HCUserBookID,
+			})
+		}
+	}
+
+	log.Info("Sync book completed", map[string]interface{}{
+		"profile_id":    profileID,
+		"abs_book_id":   absBookIDStr,
+		"abs_progress":  absBook.Progress,
+		"target_status": targetStatus,
+		"user_book_id":  *mapping.HCUserBookID,
+	})
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(APIResponse{
 		Success: true,
 		Data: map[string]interface{}{
-			"status":  "sync_initiated",
-			"book_id": absBookIDStr,
+			"status":        "synced",
+			"book_id":       absBookIDStr,
+			"abs_progress":  absBook.Progress,
+			"target_status": targetStatus,
+			"user_book_id":  *mapping.HCUserBookID,
 		},
 	})
 }
@@ -296,12 +400,384 @@ func (api *LibraryAPI) SyncBatchHandler(w http.ResponseWriter, r *http.Request) 
 		"profile_id": profileID,
 	})
 
+	// Parse request body for sync options
+	var reqBody struct {
+		SyncMode            string   `json:"sync_mode"`              // "needs_sync", "sync_all", "collections"
+		SelectedCollections []string `json:"selected_collections"`   // For collections mode
+		BookIDs             []string `json:"book_ids"`               // Optional: specific books to sync
+	}
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil && err.Error() != "EOF" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	// Default to needs_sync mode
+	if reqBody.SyncMode == "" {
+		reqBody.SyncMode = string(database.SyncModeNeedsSync)
+	}
+
+	// Get HC collector
+	hcCollector, err := api.collectorFactory.CreateHCCollector(profileID)
+	if err != nil {
+		log.Error("Failed to create HC collector", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to initialize Hardcover client",
+		})
+		return
+	}
+
+	ctx := r.Context()
+
+	// For collections mode, build a set of book IDs from selected collections
+	collectionBookIDs := make(map[string]bool)
+	if reqBody.SyncMode == string(database.SyncModeCollections) && len(reqBody.SelectedCollections) > 0 {
+		absClient, err := api.collectorFactory.CreateABSClient(profileID)
+		if err != nil {
+			log.Error("Failed to create ABS client", map[string]interface{}{"error": err.Error()})
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(APIResponse{
+				Success: false,
+				Error:   "Failed to initialize ABS client",
+			})
+			return
+		}
+		
+		collections, err := absClient.GetCollections(ctx)
+		if err != nil {
+			log.Error("Failed to get ABS collections", map[string]interface{}{"error": err.Error()})
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(APIResponse{
+				Success: false,
+				Error:   "Failed to get collections: " + err.Error(),
+			})
+			return
+		}
+		
+		// Build map of selected collection IDs
+		selectedSet := make(map[string]bool)
+		for _, colID := range reqBody.SelectedCollections {
+			selectedSet[colID] = true
+		}
+		
+		// Add book IDs from selected collections
+		for _, col := range collections {
+			if selectedSet[col.ID] {
+				for _, bookID := range col.BookIDs {
+					collectionBookIDs[bookID] = true
+				}
+			}
+		}
+		
+		log.Info("Collections mode: found books", map[string]interface{}{
+			"selected_collections": len(reqBody.SelectedCollections),
+			"books_in_collections": len(collectionBookIDs),
+		})
+	}
+
+	// Get books to sync based on mode
+	var booksToSync []database.ABSBook
+	
+	if len(reqBody.BookIDs) > 0 {
+		// Specific books requested
+		for _, bookID := range reqBody.BookIDs {
+			book, err := api.repository.GetABSBook(profileID, bookID)
+			if err == nil && book != nil {
+				booksToSync = append(booksToSync, *book)
+			}
+		}
+	} else {
+		// Get all books for profile (use large limit to get all)
+		allBooks, _, err := api.repository.GetABSBooks(profileID, 10000, 0)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(APIResponse{
+				Success: false,
+				Error:   "Failed to get books: " + err.Error(),
+			})
+			return
+		}
+		
+		// Filter books based on sync mode
+		for _, book := range allBooks {
+			mapping, _ := api.repository.GetBookMapping(profileID, book.ID)
+			
+			switch reqBody.SyncMode {
+			case string(database.SyncModeNeedsSync):
+				// Only include books that need syncing (have mapping and progress differs)
+				if mapping != nil && mapping.HCUserBookID != nil {
+					hcBook, _ := api.repository.GetHardcoverUserBook(profileID, *mapping.HCUserBookID)
+					if hcBook != nil && api.needsSync(book.Progress, book.IsFinished, hcBook.Progress, hcBook.Status) {
+						booksToSync = append(booksToSync, book)
+					}
+				}
+			case string(database.SyncModeAll):
+				// All books with mappings
+				if mapping != nil && mapping.HCUserBookID != nil {
+					booksToSync = append(booksToSync, book)
+				}
+			case string(database.SyncModeCollections):
+				// Books in selected collections with mappings
+				if mapping != nil && mapping.HCUserBookID != nil {
+					// Check if this book's ABS ID is in the collection book IDs
+					if collectionBookIDs[book.ABSID] {
+						booksToSync = append(booksToSync, book)
+					}
+				}
+			}
+		}
+	}
+
+	log.Info("Starting batch sync", map[string]interface{}{
+		"profile_id":   profileID,
+		"sync_mode":    reqBody.SyncMode,
+		"books_to_sync": len(booksToSync),
+	})
+
+	// Sync each book
+	var syncedCount int
+	var failedCount int
+	var results []map[string]interface{}
+
+	for _, book := range booksToSync {
+		mapping, _ := api.repository.GetBookMapping(profileID, book.ID)
+		if mapping == nil || mapping.HCUserBookID == nil {
+			continue
+		}
+
+		// Log the current state before sync
+		log.Debug("Syncing book", map[string]interface{}{
+			"abs_book_id":     book.ABSID,
+			"title":           book.Title,
+			"abs_progress":    book.Progress,
+			"hc_user_book_id": *mapping.HCUserBookID,
+		})
+
+		// Determine target status
+		var targetStatus string
+		if book.Progress >= 1.0 || book.IsFinished {
+			targetStatus = "READ"
+		} else if book.Progress == 0 {
+			targetStatus = "WANT_TO_READ"
+		} else {
+			targetStatus = "READING"
+		}
+
+		// Update on Hardcover
+		err := hcCollector.UpdateUserBookStatus(ctx, *mapping.HCUserBookID, targetStatus)
+		if err != nil {
+			log.Error("Failed to sync book", map[string]interface{}{
+				"abs_book_id":  book.ABSID,
+				"error":        err.Error(),
+			})
+			failedCount++
+			results = append(results, map[string]interface{}{
+				"book_id":   book.ABSID,
+				"title":     book.Title,
+				"status":    "failed",
+				"error":     err.Error(),
+			})
+			continue
+		}
+
+		// Update local HardcoverUserBook record
+		statusID := 1
+		switch targetStatus {
+		case "READING":
+			statusID = 2
+		case "READ":
+			statusID = 3
+		}
+
+		hcBook, err := api.repository.GetHardcoverUserBook(profileID, *mapping.HCUserBookID)
+		if err == nil && hcBook != nil {
+			oldProgress := hcBook.Progress
+			hcBook.Status = statusID
+			hcBook.StatusName = targetStatus
+			hcBook.Progress = book.Progress
+			hcBook.ProgressSeconds = book.CurrentTime
+			if upsertErr := api.repository.UpsertHardcoverUserBook(*hcBook); upsertErr != nil {
+				log.Error("Failed to update local HC book record", map[string]interface{}{
+					"abs_book_id":    book.ABSID,
+					"hc_user_book_id": *mapping.HCUserBookID,
+					"error":          upsertErr.Error(),
+				})
+			} else {
+				// Verify the update worked
+				verifyBook, verifyErr := api.repository.GetHardcoverUserBook(profileID, *mapping.HCUserBookID)
+				if verifyErr != nil || verifyBook == nil {
+					log.Error("Failed to verify HC book update", map[string]interface{}{
+						"abs_book_id":    book.ABSID,
+						"hc_user_book_id": *mapping.HCUserBookID,
+						"error":          "record not found after upsert",
+					})
+				} else {
+					log.Debug("Updated local HC book record", map[string]interface{}{
+						"abs_book_id":     book.ABSID,
+						"hc_user_book_id": *mapping.HCUserBookID,
+						"old_hc_progress": oldProgress,
+						"new_hc_progress": verifyBook.Progress,
+						"abs_progress":    book.Progress,
+						"new_status":      targetStatus,
+						"match":           verifyBook.Progress == book.Progress,
+					})
+				}
+			}
+		}
+
+		syncedCount++
+		results = append(results, map[string]interface{}{
+			"book_id":       book.ABSID,
+			"title":         book.Title,
+			"status":        "synced",
+			"target_status": targetStatus,
+		})
+	}
+
+	log.Info("Batch sync completed", map[string]interface{}{
+		"profile_id":   profileID,
+		"synced_count": syncedCount,
+		"failed_count": failedCount,
+	})
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(APIResponse{
 		Success: true,
 		Data: map[string]interface{}{
-			"status":       "batch_sync_initiated",
-			"synced_count": 0,
+			"status":       "batch_sync_completed",
+			"synced_count": syncedCount,
+			"failed_count": failedCount,
+			"results":      results,
+		},
+	})
+}
+
+// needsSync determines if a book needs to be synced based on progress differences
+func (api *LibraryAPI) needsSync(absProgress float64, absFinished bool, hcProgress float64, hcStatus int) bool {
+	// Calculate target status from ABS
+	var absTargetStatus int
+	if absProgress >= 1.0 || absFinished {
+		absTargetStatus = 3 // READ
+	} else if absProgress == 0 {
+		absTargetStatus = 1 // WANT_TO_READ
+	} else {
+		absTargetStatus = 2 // READING
+	}
+	
+	// If status differs, needs sync
+	if absTargetStatus != hcStatus {
+		return true
+	}
+	
+	// If progress differs significantly (more than 1%)
+	if absTargetStatus == 2 { // READING
+		diff := absProgress - hcProgress
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff > 0.01 {
+			return true
+		}
+	}
+	
+	return false
+}
+
+// GetABSLibrariesHandler returns ABS libraries for a profile
+func (api *LibraryAPI) GetABSLibrariesHandler(w http.ResponseWriter, r *http.Request) {
+	log := logger.Get()
+	w.Header().Set("Content-Type", "application/json")
+
+	profileID := r.PathValue("id")
+	if profileID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Profile ID required",
+		})
+		return
+	}
+
+	// Get ABS client for this profile
+	absClient, err := api.collectorFactory.CreateABSClient(profileID)
+	if err != nil {
+		log.Error("Failed to create ABS client", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to initialize ABS client",
+		})
+		return
+	}
+
+	libraries, err := absClient.GetLibraries(r.Context())
+	if err != nil {
+		log.Error("Failed to get ABS libraries", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to get libraries: " + err.Error(),
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"libraries": libraries,
+		},
+	})
+}
+
+// GetABSCollectionsHandler returns ABS collections for a profile
+func (api *LibraryAPI) GetABSCollectionsHandler(w http.ResponseWriter, r *http.Request) {
+	log := logger.Get()
+	w.Header().Set("Content-Type", "application/json")
+
+	profileID := r.PathValue("id")
+	if profileID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Profile ID required",
+		})
+		return
+	}
+
+	// Get ABS client for this profile
+	absClient, err := api.collectorFactory.CreateABSClient(profileID)
+	if err != nil {
+		log.Error("Failed to create ABS client", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to initialize ABS client",
+		})
+		return
+	}
+
+	collections, err := absClient.GetCollections(r.Context())
+	if err != nil {
+		log.Error("Failed to get ABS collections", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to get collections: " + err.Error(),
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"collections": collections,
 		},
 	})
 }
@@ -541,6 +1017,60 @@ func (api *LibraryAPI) GetProgressHistoryHandler(w http.ResponseWriter, r *http.
 	json.NewEncoder(w).Encode(APIResponse{
 		Success: true,
 		Data:    responseData,
+	})
+}
+
+// GetSyncEventsHandler returns sync events for a profile
+func (api *LibraryAPI) GetSyncEventsHandler(w http.ResponseWriter, r *http.Request) {
+	log := logger.Get()
+	w.Header().Set("Content-Type", "application/json")
+
+	profileID := r.PathValue("id")
+	if profileID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Profile ID required",
+		})
+		return
+	}
+
+	// Parse pagination params
+	limit := 100
+	offset := 0
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			offset = o
+		}
+	}
+
+	events, total, err := api.repository.GetSyncEvents(profileID, limit, offset)
+	if err != nil {
+		log.Error("Failed to get sync events", map[string]interface{}{
+			"error": err.Error(),
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to retrieve sync events",
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"events": events,
+			"total":  total,
+			"limit":  limit,
+			"offset": offset,
+		},
 	})
 }
 
@@ -873,6 +1403,351 @@ func (api *LibraryAPI) UpdateEditionHandler(w http.ResponseWriter, r *http.Reque
 		Data: map[string]interface{}{
 			"status":     "edition_updated",
 			"edition_id": req.EditionID,
+		},
+	})
+}
+
+// SearchHardcoverRequest represents a request to search for a book on Hardcover
+type SearchHardcoverRequest struct {
+	ASIN   string `json:"asin,omitempty"`
+	ISBN   string `json:"isbn,omitempty"`
+	Title  string `json:"title,omitempty"`
+	Author string `json:"author,omitempty"`
+}
+
+// SearchHardcoverResult represents a search result from Hardcover
+type SearchHardcoverResult struct {
+	BookID int64  `json:"book_id"`
+	Title  string `json:"title"`
+	Slug   string `json:"slug,omitempty"`
+}
+
+// SearchHardcoverHandler searches for a book on Hardcover by ASIN/ISBN/title
+func (api *LibraryAPI) SearchHardcoverHandler(w http.ResponseWriter, r *http.Request) {
+	log := logger.Get()
+	w.Header().Set("Content-Type", "application/json")
+
+	profileID := r.PathValue("id")
+	absBookID := r.PathValue("absBookId")
+
+	if profileID == "" || absBookID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Profile ID and Book ID required",
+		})
+		return
+	}
+
+	// Get the ABS book to get search data
+	absBook, err := api.repository.GetABSBook(profileID, absBookID)
+	if err != nil || absBook == nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "ABS book not found",
+		})
+		return
+	}
+
+	// Get the HC collector to access the Hardcover client
+	hcCollector, err := api.collectorFactory.CreateHCCollector(profileID)
+	if err != nil {
+		log.Error("Failed to create HC collector", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to initialize Hardcover client",
+		})
+		return
+	}
+
+	ctx := r.Context()
+	var results []SearchHardcoverResult
+
+	// Try to search by ASIN first
+	if absBook.ASIN != "" {
+		book, err := hcCollector.SearchBookByASIN(ctx, absBook.ASIN)
+		if err == nil && book != nil {
+			bookID, _ := strconv.ParseInt(book.ID, 10, 64)
+			results = append(results, SearchHardcoverResult{
+				BookID: bookID,
+				Title:  book.Title,
+				Slug:   book.Slug,
+			})
+		}
+	}
+
+	// If no ASIN results, try ISBN
+	if len(results) == 0 && absBook.ISBN != "" {
+		book, err := hcCollector.SearchBookByISBN13(ctx, absBook.ISBN)
+		if err == nil && book != nil {
+			bookID, _ := strconv.ParseInt(book.ID, 10, 64)
+			results = append(results, SearchHardcoverResult{
+				BookID: bookID,
+				Title:  book.Title,
+				Slug:   book.Slug,
+			})
+		}
+	}
+
+	// If still no results, try title/author search
+	if len(results) == 0 && absBook.Title != "" {
+		books, err := hcCollector.SearchBooks(ctx, absBook.Title, absBook.Author)
+		if err == nil && len(books) > 0 {
+			for _, book := range books {
+				bookID, _ := strconv.ParseInt(book.ID, 10, 64)
+				results = append(results, SearchHardcoverResult{
+					BookID: bookID,
+					Title:  book.Title,
+					Slug:   book.Slug,
+				})
+			}
+		}
+	}
+
+	log.Info("Searched Hardcover for book", map[string]interface{}{
+		"profile_id":    profileID,
+		"abs_book_id":   absBookID,
+		"abs_title":     absBook.Title,
+		"result_count":  len(results),
+	})
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data:    results,
+	})
+}
+
+// SearchHardcoverByQueryHandler searches for books on Hardcover by a text query
+func (api *LibraryAPI) SearchHardcoverByQueryHandler(w http.ResponseWriter, r *http.Request) {
+	log := logger.Get()
+	w.Header().Set("Content-Type", "application/json")
+
+	profileID := r.PathValue("id")
+	query := r.URL.Query().Get("q")
+
+	if profileID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Profile ID required",
+		})
+		return
+	}
+
+	if query == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Search query required (use ?q=search+text)",
+		})
+		return
+	}
+
+	// Get the HC collector to access the Hardcover client
+	hcCollector, err := api.collectorFactory.CreateHCCollector(profileID)
+	if err != nil {
+		log.Error("Failed to create HC collector", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to initialize Hardcover client",
+		})
+		return
+	}
+
+	ctx := r.Context()
+	var results []SearchHardcoverResult
+
+	// Search by title (use empty author to search just by query)
+	books, err := hcCollector.SearchBooks(ctx, query, "")
+	if err != nil {
+		log.Error("Failed to search Hardcover", map[string]interface{}{"error": err.Error(), "query": query})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to search Hardcover",
+		})
+		return
+	}
+
+	for _, book := range books {
+		bookID, _ := strconv.ParseInt(book.ID, 10, 64)
+		results = append(results, SearchHardcoverResult{
+			BookID: bookID,
+			Title:  book.Title,
+			Slug:   book.Slug,
+		})
+	}
+
+	log.Info("Searched Hardcover by query", map[string]interface{}{
+		"profile_id":   profileID,
+		"query":        query,
+		"result_count": len(results),
+	})
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data:    results,
+	})
+}
+
+// AddToWantToReadRequest represents a request to add a book to "want to read"
+type AddToWantToReadRequest struct {
+	EditionID int64 `json:"edition_id"`
+	BookID    int64 `json:"book_id"`
+}
+
+// AddToWantToReadHandler adds a book to Hardcover's "want to read" list and creates a mapping
+func (api *LibraryAPI) AddToWantToReadHandler(w http.ResponseWriter, r *http.Request) {
+	log := logger.Get()
+	w.Header().Set("Content-Type", "application/json")
+
+	profileID := r.PathValue("id")
+	absBookIDStr := r.PathValue("absBookId")
+
+	if profileID == "" || absBookIDStr == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Profile ID and Book ID required",
+		})
+		return
+	}
+
+	var req AddToWantToReadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Invalid request body",
+		})
+		return
+	}
+
+	if req.EditionID == 0 || req.BookID == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "edition_id and book_id are required",
+		})
+		return
+	}
+
+	// Get the ABS book
+	absBook, err := api.repository.GetABSBook(profileID, absBookIDStr)
+	if err != nil || absBook == nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "ABS book not found",
+		})
+		return
+	}
+
+	// Get the HC collector
+	hcCollector, err := api.collectorFactory.CreateHCCollector(profileID)
+	if err != nil {
+		log.Error("Failed to create HC collector", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to initialize Hardcover client: " + err.Error(),
+		})
+		return
+	}
+
+	ctx := r.Context()
+
+	// Create user book on Hardcover with "WANT_TO_READ" status
+	editionIDStr := strconv.FormatInt(req.EditionID, 10)
+	userBookIDStr, err := hcCollector.CreateUserBook(ctx, editionIDStr, "WANT_TO_READ")
+	if err != nil {
+		log.Error("Failed to create user book on Hardcover", map[string]interface{}{
+			"error":      err.Error(),
+			"edition_id": req.EditionID,
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to add book to Hardcover: " + err.Error(),
+		})
+		return
+	}
+
+	// Parse the user book ID
+	userBookID, err := strconv.ParseInt(userBookIDStr, 10, 64)
+	if err != nil {
+		log.Error("Failed to parse user book ID", map[string]interface{}{"error": err.Error()})
+		userBookID = 0
+	}
+
+	// Create the mapping
+	hcBookID := req.BookID
+	mapping := database.BookMapping{
+		ProfileID:       profileID,
+		ABSBookID:       absBook.ID,
+		HCBookID:        &hcBookID,
+		HCEditionID:     &req.EditionID,
+		HCUserBookID:    &userBookID,
+		MatchMethod:     database.MatchMethodManual,
+		MatchConfidence: 1.0,
+		ManualOverride:  true,
+	}
+
+	if err := api.repository.UpsertBookMapping(mapping); err != nil {
+		log.Error("Failed to create mapping", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to create mapping",
+		})
+		return
+	}
+
+	// Also create/update the HardcoverUserBook record so our local DB is in sync
+	hcUserBook := database.HardcoverUserBook{
+		ProfileID:       profileID,
+		HCUserBookID:    userBookID,
+		HCBookID:        req.BookID,
+		HCEditionID:     &req.EditionID,
+		Title:           absBook.Title,  // Use ABS title since we don't have HC title
+		Author:          absBook.Author,
+		ASIN:            absBook.ASIN,
+		ISBN13:          absBook.ISBN,   // ABSBook uses ISBN field
+		Status:          1, // WANT_TO_READ
+		StatusName:      "Want to Read",
+		Progress:        0.0,
+		ProgressSeconds: 0.0,
+	}
+
+	if err := api.repository.UpsertHardcoverUserBook(hcUserBook); err != nil {
+		// Log but don't fail - the mapping was created successfully
+		log.Warn("Failed to create HardcoverUserBook record", map[string]interface{}{
+			"error":        err.Error(),
+			"user_book_id": userBookID,
+		})
+	}
+
+	log.Info("Added book to want to read and created mapping", map[string]interface{}{
+		"profile_id":     profileID,
+		"abs_book_id":    absBookIDStr,
+		"hc_book_id":     req.BookID,
+		"hc_edition_id":  req.EditionID,
+		"hc_user_book_id": userBookID,
+	})
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"status":          "added_to_want_to_read",
+			"user_book_id":    userBookID,
+			"edition_id":      req.EditionID,
+			"book_id":         req.BookID,
 		},
 	})
 }

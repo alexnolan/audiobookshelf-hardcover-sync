@@ -9,6 +9,7 @@ import (
 	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/api/hardcover"
 	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/database"
 	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/logger"
+	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/models"
 )
 
 // HCCollector handles collection of books from Hardcover with rate limiting
@@ -201,4 +202,88 @@ func (c *HCCollector) GetBookEditions(ctx context.Context, bookID int) ([]hardco
 	}
 
 	return editions, nil
+}
+
+// SearchBookByASIN searches for a book on Hardcover by ASIN
+func (c *HCCollector) SearchBookByASIN(ctx context.Context, asin string) (*models.HardcoverBook, error) {
+	// Wait for rate limit
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit wait error: %w", err)
+	}
+
+	return c.hcClient.SearchBookByASIN(ctx, asin)
+}
+
+// SearchBookByISBN13 searches for a book on Hardcover by ISBN-13
+func (c *HCCollector) SearchBookByISBN13(ctx context.Context, isbn13 string) (*models.HardcoverBook, error) {
+	// Wait for rate limit
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit wait error: %w", err)
+	}
+
+	return c.hcClient.SearchBookByISBN13(ctx, isbn13)
+}
+
+// SearchBooks searches for books on Hardcover by title and author
+func (c *HCCollector) SearchBooks(ctx context.Context, title, author string) ([]models.HardcoverBook, error) {
+	// Wait for rate limit
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit wait error: %w", err)
+	}
+
+	return c.hcClient.SearchBooks(ctx, title, author)
+}
+
+// CreateUserBook creates a new user book on Hardcover with the given edition and status
+func (c *HCCollector) CreateUserBook(ctx context.Context, editionID, status string) (string, error) {
+	// Wait for rate limit
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return "", fmt.Errorf("rate limit wait error: %w", err)
+	}
+
+	return c.hcClient.CreateUserBook(ctx, editionID, status)
+}
+
+// UpdateUserBookStatus updates the status of a user book on Hardcover
+func (c *HCCollector) UpdateUserBookStatus(ctx context.Context, userBookID int64, status string) error {
+	// Wait for rate limit
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return fmt.Errorf("rate limit wait error: %w", err)
+	}
+
+	return c.hcClient.UpdateUserBookStatus(ctx, hardcover.UpdateUserBookStatusInput{
+		ID:     userBookID,
+		Status: status,
+	})
+}
+
+// InsertUserBookRead creates a reading progress entry on Hardcover
+func (c *HCCollector) InsertUserBookRead(ctx context.Context, userBookID int64, editionID *int64, startedAt, finishedAt *string) (int, error) {
+	// Wait for rate limit
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return 0, fmt.Errorf("rate limit wait error: %w", err)
+	}
+
+	input := hardcover.InsertUserBookReadInput{
+		UserBookID: userBookID,
+		DatesRead: hardcover.DatesReadInput{
+			EditionID:  editionID,
+			StartedAt:  startedAt,
+			FinishedAt: finishedAt,
+		},
+	}
+
+	return c.hcClient.InsertUserBookRead(ctx, input)
+}
+
+// GetUserBookReads gets the reading progress entries for a user book
+func (c *HCCollector) GetUserBookReads(ctx context.Context, userBookID int64) ([]hardcover.UserBookRead, error) {
+	// Wait for rate limit
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit wait error: %w", err)
+	}
+
+	return c.hcClient.GetUserBookReads(ctx, hardcover.GetUserBookReadsInput{
+		UserBookID: userBookID,
+	})
 }

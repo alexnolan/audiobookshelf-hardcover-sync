@@ -158,11 +158,26 @@ func (s *Service) SyncBatch(ctx context.Context, absBookIDs []string) error
 }
 ```
 
-#### Book Library UI
+#### Book Library UI (Matching Tab)
+- Renamed from "Library" to "Matching" tab for clarity
 - Show side-by-side ABS vs HC progress
 - Color coding: green (in sync), yellow (minor diff), red (major diff), gray (not matched)
 - Support multi-select for batch operations
 - Lazy load book details on expand
+- Sortable columns: Title, Author, Diff, Updated (click headers to sort)
+- Filter dropdowns: Status, Media Type, ABS Library
+- localStorage persistence for tab selection, filters, sort preferences
+- Search with 500ms debounce
+
+#### Profile Data Management
+- Purge feature: Delete all ABS books, HC books, mappings, configs, history for a profile
+- Allows users to reset and re-collect data fresh
+- Available via "Purge Data" button on profile cards
+
+#### Collection Filtering
+- Include/Exclude collections use collection **IDs** (not names)
+- `ABSCollector` builds book ID → collection ID mappings
+- `CollectionFilter.ShouldIncludeBook()` checks membership by ID
 
 ### Release Process
 - Semantic versioning: v1.2.3

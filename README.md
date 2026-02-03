@@ -67,6 +67,7 @@ Existing single-profile setups are **automatically migrated** on first startup:
 | `GET` | `/api/profiles/{id}/status` | Get sync status |
 | `POST` | `/api/profiles/{id}/sync` | Start sync |
 | `DELETE` | `/api/profiles/{id}/sync` | Cancel sync |
+| `POST` | `/api/profiles/{id}/purge` | Purge all data for profile (books, mappings, history) |
 | `GET` | `/api/status` | All profile statuses |
 
 ### Environment Variables (Multi-Profile)

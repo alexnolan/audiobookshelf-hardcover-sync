@@ -3122,48 +3122,36 @@ func (s *Service) processFoundBook(ctx context.Context, hcBook *models.Hardcover
 				"error":      err.Error(),
 			})
 		} else {
-			// Check if book is already marked as owned using Hardcover BOOK ID (client queries by book_id)
-			bookIDInt, err := strconv.Atoi(hcBook.ID)
+			// Check if the specific edition is already marked as owned
+			isOwned, err := s.hardcover.CheckEditionOwnership(ctx, editionID)
 			if err != nil {
-				log.Warn("Invalid book ID format for ownership check", map[string]interface{}{
-					"book_id": hcBook.ID,
-					"error":   err.Error(),
+				log.Warn("Failed to check edition ownership status", map[string]interface{}{
+					"edition_id": editionID,
+					"error":      err.Error(),
 				})
-			} else {
-				isOwned, err := s.hardcover.CheckBookOwnership(ctx, bookIDInt)
-				if err != nil {
-					log.Warn("Failed to check book ownership status", map[string]interface{}{
-						"book_id":    bookIDInt,
+			} else if !isOwned {
+				// Respect DryRun: only log what would happen
+				if s.config.Sync.DryRun {
+					log.Info("[DRY-RUN] Would mark edition as owned", map[string]interface{}{
 						"edition_id": editionID,
-						"error":      err.Error(),
 					})
-				} else if !isOwned {
-					// Respect DryRun: only log what would happen
-					if s.config.Sync.DryRun {
-						log.Info("[DRY-RUN] Would mark edition as owned", map[string]interface{}{
-							"book_id":    bookIDInt,
+				} else {
+					err = s.hardcover.MarkEditionAsOwned(ctx, editionID)
+					if err != nil {
+						log.Warn("Failed to mark edition as owned", map[string]interface{}{
 							"edition_id": editionID,
+							"error":      err.Error(),
 						})
 					} else {
-						err = s.hardcover.MarkEditionAsOwned(ctx, editionID)
-						if err != nil {
-							log.Warn("Failed to mark edition as owned", map[string]interface{}{
-								"edition_id": editionID,
-								"error":      err.Error(),
-							})
-						} else {
-							log.Info("Successfully marked edition as owned", map[string]interface{}{
-								"book_id":    bookIDInt,
-								"edition_id": editionID,
-							})
-						}
+						log.Info("Successfully marked edition as owned", map[string]interface{}{
+							"edition_id": editionID,
+						})
 					}
-				} else {
-					log.Debug("Book is already marked as owned", map[string]interface{}{
-						"book_id":    bookIDInt,
-						"edition_id": editionID,
-					})
 				}
+			} else {
+				log.Debug("Edition is already marked as owned", map[string]interface{}{
+					"edition_id": editionID,
+				})
 			}
 		}
 	}

@@ -95,6 +95,16 @@ func (s *MultiUserService) CreateABSCollector(profileID string) (*sync.ABSCollec
 	return sync.NewABSCollector(absClient, s.repository), nil
 }
 
+// CreateABSClient creates an ABS client for a profile (for direct API access)
+func (s *MultiUserService) CreateABSClient(profileID string) (audiobookshelf.AudiobookshelfClientInterface, error) {
+	profile, err := s.GetProfile(profileID)
+	if err != nil {
+		return nil, err
+	}
+	
+	return audiobookshelf.NewClient(profile.AudiobookshelfURL, profile.AudiobookshelfToken), nil
+}
+
 // CreateHCCollector creates an HCCollector for a profile
 func (s *MultiUserService) CreateHCCollector(profileID string) (*sync.HCCollector, error) {
 	profile, err := s.GetProfile(profileID)
@@ -161,6 +171,31 @@ func (s *MultiUserService) DeleteProfile(profileID string) error {
 	s.statusMutex.Unlock()
 	
 	return s.repository.DeleteProfile(profileID)
+}
+
+// PurgeProfileData purges all data associated with a profile without deleting the profile itself.
+// This allows users to start fresh with a clean database while keeping their profile configuration.
+func (s *MultiUserService) PurgeProfileData(profileID string) (*database.PurgeProfileDataResult, error) {
+	// Cancel any active sync for this profile first
+	if err := s.CancelSync(profileID); err != nil {
+		s.logger.Warn("Failed to cancel sync during profile purge", map[string]interface{}{
+			"profileID": profileID,
+			"error":     err,
+		})
+	}
+	
+	// Reset status tracking
+	s.statusMutex.Lock()
+	if status, exists := s.profileStatuses[profileID]; exists {
+		status.Status = "idle"
+		status.Progress = "Data purged"
+		status.BooksTotal = 0
+		status.BooksSynced = 0
+		status.Error = ""
+	}
+	s.statusMutex.Unlock()
+	
+	return s.repository.PurgeProfileData(profileID)
 }
 
 // GetAllProfileStatuses returns the sync status for all profiles

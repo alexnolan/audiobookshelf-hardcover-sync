@@ -246,36 +246,25 @@ func (r *Repository) UpdateUserConfig(profileID, audiobookshelfURL, audiobookshe
 	// This prevents clearing all values when only updating tokens
 	finalSyncConfig := existingSyncConfig
 	if !syncConfig.IsEmpty() {
-		// Merge the new config with existing, preserving unset values
-		if syncConfig.Incremental || existingSyncConfig.Incremental {
-			finalSyncConfig.Incremental = syncConfig.Incremental
-		}
+		// For boolean fields, always use the new value since false is a valid value
+		finalSyncConfig.Incremental = syncConfig.Incremental
+		finalSyncConfig.SyncWantToRead = syncConfig.SyncWantToRead
+		finalSyncConfig.ProcessUnreadBooks = syncConfig.ProcessUnreadBooks
+		finalSyncConfig.SyncOwned = syncConfig.SyncOwned
+		finalSyncConfig.IncludeEbooks = syncConfig.IncludeEbooks
+		finalSyncConfig.DryRun = syncConfig.DryRun
+		
+		// For string fields, update if provided
 		if syncConfig.StateFile != "" {
 			finalSyncConfig.StateFile = syncConfig.StateFile
 		}
 		if syncConfig.MinChangeThreshold != 0 {
 			finalSyncConfig.MinChangeThreshold = syncConfig.MinChangeThreshold
 		}
-		if syncConfig.SyncInterval != "" {
-			finalSyncConfig.SyncInterval = syncConfig.SyncInterval
-		}
+		// SyncInterval can be empty (disabled) so always set it
+		finalSyncConfig.SyncInterval = syncConfig.SyncInterval
 		if syncConfig.MinimumProgress != 0 {
 			finalSyncConfig.MinimumProgress = syncConfig.MinimumProgress
-		}
-		if syncConfig.SyncWantToRead || existingSyncConfig.SyncWantToRead {
-			finalSyncConfig.SyncWantToRead = syncConfig.SyncWantToRead
-		}
-		// For ProcessUnreadBooks, we need to explicitly check if it was provided
-		// since false is a valid value that should be preserved
-		finalSyncConfig.ProcessUnreadBooks = syncConfig.ProcessUnreadBooks
-		if syncConfig.SyncOwned || existingSyncConfig.SyncOwned {
-			finalSyncConfig.SyncOwned = syncConfig.SyncOwned
-		}
-		if syncConfig.IncludeEbooks || existingSyncConfig.IncludeEbooks {
-			finalSyncConfig.IncludeEbooks = syncConfig.IncludeEbooks
-		}
-		if syncConfig.DryRun || existingSyncConfig.DryRun {
-			finalSyncConfig.DryRun = syncConfig.DryRun
 		}
 		if syncConfig.TestBookFilter != "" {
 			finalSyncConfig.TestBookFilter = syncConfig.TestBookFilter
@@ -283,12 +272,18 @@ func (r *Repository) UpdateUserConfig(profileID, audiobookshelfURL, audiobookshe
 		if syncConfig.TestBookLimit != 0 {
 			finalSyncConfig.TestBookLimit = syncConfig.TestBookLimit
 		}
-		if len(syncConfig.Libraries.Include) > 0 {
-			finalSyncConfig.Libraries.Include = syncConfig.Libraries.Include
-		}
-		if len(syncConfig.Libraries.Exclude) > 0 {
-			finalSyncConfig.Libraries.Exclude = syncConfig.Libraries.Exclude
-		}
+		
+		// Library filtering - always update these as empty arrays are valid (means "all")
+		finalSyncConfig.Libraries.Include = syncConfig.Libraries.Include
+		finalSyncConfig.Libraries.Exclude = syncConfig.Libraries.Exclude
+		finalSyncConfig.LibraryFilterMode = syncConfig.LibraryFilterMode
+		finalSyncConfig.FilteredLibraries = syncConfig.FilteredLibraries
+		
+		// Sync mode and collection settings - always update
+		finalSyncConfig.SyncMode = syncConfig.SyncMode
+		finalSyncConfig.SelectedCollections = syncConfig.SelectedCollections
+		finalSyncConfig.IncludeCollections = syncConfig.IncludeCollections
+		finalSyncConfig.ExcludeCollections = syncConfig.ExcludeCollections
 	}
 
 	// Serialize sync config
@@ -635,6 +630,17 @@ func (r *Repository) GetABSBooks(profileID string, limit int, offset int) ([]ABS
 	return books, total, nil
 }
 
+// GetABSBooksForProfile retrieves all ABS books for a profile (no pagination)
+func (r *Repository) GetABSBooksForProfile(profileID string) ([]ABSBook, error) {
+	var books []ABSBook
+	if err := r.db.GetDB().
+		Where("profile_id = ?", profileID).
+		Find(&books).Error; err != nil {
+		return nil, err
+	}
+	return books, nil
+}
+
 // GetABSBooksByLibrary retrieves all ABS books in a specific library
 func (r *Repository) GetABSBooksByLibrary(profileID, libraryID string) ([]ABSBook, error) {
 	var books []ABSBook
@@ -657,6 +663,131 @@ func (r *Repository) DeleteABSBook(profileID, absID string) error {
 // DeleteABSBooksByProfile deletes all ABS books for a profile
 func (r *Repository) DeleteABSBooksByProfile(profileID string) error {
 	return r.db.GetDB().Where("profile_id = ?", profileID).Delete(&ABSBook{}).Error
+}
+
+// DeleteABSEbooksByProfile deletes all ebooks for a profile (media_type = 'ebook')
+func (r *Repository) DeleteABSEbooksByProfile(profileID string) (int64, error) {
+	result := r.db.GetDB().Where("profile_id = ? AND LOWER(media_type) = ?", profileID, "ebook").Delete(&ABSBook{})
+	return result.RowsAffected, result.Error
+}
+
+// DeleteABSBooksByLibrary deletes all ABS books for a specific library within a profile
+func (r *Repository) DeleteABSBooksByLibrary(profileID, libraryID string) (int64, error) {
+	result := r.db.GetDB().Where("profile_id = ? AND library_id = ?", profileID, libraryID).Delete(&ABSBook{})
+	return result.RowsAffected, result.Error
+}
+
+// PurgeProfileDataResult contains counts of deleted records from each table
+type PurgeProfileDataResult struct {
+	ABSBooks        int64 `json:"abs_books"`
+	HardcoverBooks  int64 `json:"hardcover_books"`
+	BookMappings    int64 `json:"book_mappings"`
+	ProgressHistory int64 `json:"progress_history"`
+	SyncEvents      int64 `json:"sync_events"`
+	BookSyncLogs    int64 `json:"book_sync_logs"`
+	BookSyncConfigs int64 `json:"book_sync_configs"`
+}
+
+// PurgeProfileData deletes all data associated with a profile from all tables.
+// This is a destructive operation that removes:
+// - ABS books
+// - Hardcover user books
+// - Book mappings
+// - Progress history
+// - Sync events
+// - Book sync logs
+// - Book sync configs
+// - Profile sync state
+// The profile itself is NOT deleted, only its associated data.
+func (r *Repository) PurgeProfileData(profileID string) (*PurgeProfileDataResult, error) {
+	result := &PurgeProfileDataResult{}
+
+	// Use a transaction to ensure all deletes succeed or none do
+	err := r.db.GetDB().Transaction(func(tx *gorm.DB) error {
+		var res *gorm.DB
+
+		// Delete book sync configs first (references ABSBook)
+		res = tx.Where("profile_id = ?", profileID).Delete(&BookSyncConfig{})
+		if res.Error != nil {
+			return fmt.Errorf("failed to delete book sync configs: %w", res.Error)
+		}
+		result.BookSyncConfigs = res.RowsAffected
+
+		// Delete book mappings (references ABSBook)
+		res = tx.Where("profile_id = ?", profileID).Delete(&BookMapping{})
+		if res.Error != nil {
+			return fmt.Errorf("failed to delete book mappings: %w", res.Error)
+		}
+		result.BookMappings = res.RowsAffected
+
+		// Delete progress history
+		res = tx.Where("profile_id = ?", profileID).Delete(&ProgressHistory{})
+		if res.Error != nil {
+			return fmt.Errorf("failed to delete progress history: %w", res.Error)
+		}
+		result.ProgressHistory = res.RowsAffected
+
+		// Delete sync events
+		res = tx.Where("profile_id = ?", profileID).Delete(&SyncEvent{})
+		if res.Error != nil {
+			return fmt.Errorf("failed to delete sync events: %w", res.Error)
+		}
+		result.SyncEvents = res.RowsAffected
+
+		// Delete book sync logs
+		res = tx.Where("profile_id = ?", profileID).Delete(&BookSyncLog{})
+		if res.Error != nil {
+			return fmt.Errorf("failed to delete book sync logs: %w", res.Error)
+		}
+		result.BookSyncLogs = res.RowsAffected
+
+		// Delete ABS books
+		res = tx.Where("profile_id = ?", profileID).Delete(&ABSBook{})
+		if res.Error != nil {
+			return fmt.Errorf("failed to delete ABS books: %w", res.Error)
+		}
+		result.ABSBooks = res.RowsAffected
+
+		// Delete Hardcover user books
+		res = tx.Where("profile_id = ?", profileID).Delete(&HardcoverUserBook{})
+		if res.Error != nil {
+			return fmt.Errorf("failed to delete Hardcover user books: %w", res.Error)
+		}
+		result.HardcoverBooks = res.RowsAffected
+
+		// Reset profile sync state (keep the record but clear the state)
+		res = tx.Model(&ProfileSyncState{}).Where("profile_id = ?", profileID).Updates(map[string]interface{}{
+			"state_data":  "{}",
+			"last_sync":   nil,
+			"updated_at":  time.Now(),
+		})
+		if res.Error != nil {
+			return fmt.Errorf("failed to reset profile sync state: %w", res.Error)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		r.logger.Error("Failed to purge profile data", map[string]interface{}{
+			"profile_id": profileID,
+			"error":      err.Error(),
+		})
+		return nil, err
+	}
+
+	r.logger.Info("Purged profile data", map[string]interface{}{
+		"profile_id":        profileID,
+		"abs_books":         result.ABSBooks,
+		"hardcover_books":   result.HardcoverBooks,
+		"book_mappings":     result.BookMappings,
+		"progress_history":  result.ProgressHistory,
+		"sync_events":       result.SyncEvents,
+		"book_sync_logs":    result.BookSyncLogs,
+		"book_sync_configs": result.BookSyncConfigs,
+	})
+
+	return result, nil
 }
 
 // ============================================================================
@@ -1137,25 +1268,37 @@ func (r *Repository) GetBookComparison(profileID string, absBookID uint) (*BookC
 
 // BookFilterOptions defines filter, sort, and search options for book queries
 type BookFilterOptions struct {
-	Search string // Search query for title/author
-	Filter string // Filter: in_sync, needs_sync, unmapped, disabled
-	Sort   string // Sort: title, progress_diff, last_updated
+	Search       string // Search query for title/author
+	Filter       string // Filter: in_sync, needs_sync, unmapped, disabled
+	Sort         string // Sort: title, progress_diff, last_updated
+	SortDir      string // Sort direction: asc, desc
+	MediaType    string // Filter by media type: audiobook, ebook
+	LibraryID    string // Filter by ABS library ID
+	CollectionID string // Filter by ABS collection ID
 }
 
 // GetBookComparisons retrieves all comparisons for a profile with pagination and filtering
 func (r *Repository) GetBookComparisons(profileID string, limit int, offset int, opts *BookFilterOptions) ([]BookComparison, int64, error) {
 	var absBooks []ABSBook
 
+	// Determine sort direction
+	sortDir := "ASC"
+	if opts != nil && opts.SortDir == "desc" {
+		sortDir = "DESC"
+	}
+
 	// Determine sort order
-	orderBy := "title ASC" // default
+	orderBy := "title " + sortDir // default
 	if opts != nil && opts.Sort != "" {
 		switch opts.Sort {
+		case "author":
+			orderBy = "author " + sortDir
 		case "progress_diff":
-			orderBy = "progress DESC" // Will be recalculated, sort by abs progress for now
+			orderBy = "progress " + sortDir // Will be recalculated, sort by abs progress for now
 		case "last_updated":
-			orderBy = "updated_at DESC"
+			orderBy = "updated_at " + sortDir
 		default:
-			orderBy = "title ASC"
+			orderBy = "title " + sortDir
 		}
 	}
 
@@ -1169,6 +1312,22 @@ func (r *Repository) GetBookComparisons(profileID string, limit int, offset int,
 	if opts != nil && opts.Search != "" {
 		searchPattern := "%" + opts.Search + "%"
 		bookQuery = bookQuery.Where("(title LIKE ? OR author LIKE ?)", searchPattern, searchPattern)
+	}
+
+	// Apply media type filter if provided
+	if opts != nil && opts.MediaType != "" {
+		switch opts.MediaType {
+		case "audiobook":
+			// Audiobooks have media_type = "audiobook" or "book" (legacy) or empty/null (for backwards compatibility)
+			bookQuery = bookQuery.Where("(LOWER(media_type) = ? OR LOWER(media_type) = ? OR media_type IS NULL OR media_type = '')", "audiobook", "book")
+		case "ebook":
+			bookQuery = bookQuery.Where("LOWER(media_type) = ?", "ebook")
+		}
+	}
+
+	// Apply library filter if provided
+	if opts != nil && opts.LibraryID != "" {
+		bookQuery = bookQuery.Where("library_id = ?", opts.LibraryID)
 	}
 
 	if err := bookQuery.

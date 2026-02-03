@@ -82,9 +82,13 @@ func New(addr string, multiUserService *multiuser.MultiUserService, authService 
 	apiMux.HandleFunc("GET /profiles/{id}/status", s.handleAPIProfilesWithID)
 	apiMux.HandleFunc("POST /profiles/{id}/sync", s.handleAPIProfilesWithID)
 	apiMux.HandleFunc("DELETE /profiles/{id}/sync", s.handleAPIProfilesWithID)
+	apiMux.HandleFunc("POST /profiles/{id}/purge", s.handleAPIPurgeProfileData)  // Purge profile data endpoint
 	apiMux.HandleFunc("GET /profiles/{id}/summary", s.handleAPISummary)  // Add summary endpoint
 	apiMux.HandleFunc("GET /profiles/{id}/book-syncs", s.handleAPIBookSyncLogs)  // Book sync logs endpoint
 	apiMux.HandleFunc("GET /profiles/{id}/book-syncs/{audiobookId}", s.handleAPIBookSyncLog)  // Single book sync log
+	apiMux.HandleFunc("GET /profiles/{id}/sync-events", s.handleAPILibrarySyncEvents)  // Sync events endpoint
+	apiMux.HandleFunc("GET /profiles/{id}/abs/libraries", s.handleAPIABSLibraries)  // ABS libraries endpoint
+	apiMux.HandleFunc("GET /profiles/{id}/abs/collections", s.handleAPIABSCollections)  // ABS collections endpoint
 	
 	// Library API routes (new rearchitecture)
 	apiMux.HandleFunc("GET /profiles/{id}/books", s.handleAPILibraryBooks)
@@ -101,6 +105,9 @@ func New(addr string, multiUserService *multiuser.MultiUserService, authService 
 	apiMux.HandleFunc("DELETE /profiles/{id}/books/{absBookId}/mapping", s.handleAPILibraryDeleteMapping)
 	apiMux.HandleFunc("GET /profiles/{id}/editions", s.handleAPILibraryGetEditions)
 	apiMux.HandleFunc("PUT /profiles/{id}/books/{absBookId}/edition", s.handleAPILibraryUpdateEdition)
+	apiMux.HandleFunc("GET /profiles/{id}/books/{absBookId}/search-hardcover", s.handleAPILibrarySearchHardcover)
+	apiMux.HandleFunc("GET /profiles/{id}/search-hardcover", s.handleAPILibrarySearchHardcoverByQuery)
+	apiMux.HandleFunc("POST /profiles/{id}/books/{absBookId}/add-to-hardcover", s.handleAPILibraryAddToHardcover)
 
 	// Mount API routes under /api with auth middleware
 	handler.Handle("/api/", s.authMiddleware.RequireAuth(http.StripPrefix("/api", apiMux)))
@@ -455,6 +462,14 @@ func (s *Server) handleAPILibraryBooks(w http.ResponseWriter, r *http.Request) {
 	s.libraryAPI.GetBooksHandler(w, r)
 }
 
+func (s *Server) handleAPIABSLibraries(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.GetABSLibrariesHandler(w, r)
+}
+
+func (s *Server) handleAPIABSCollections(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.GetABSCollectionsHandler(w, r)
+}
+
 func (s *Server) handleAPILibraryBook(w http.ResponseWriter, r *http.Request) {
 	s.libraryAPI.GetBookHandler(w, r)
 }
@@ -507,6 +522,22 @@ func (s *Server) handleAPILibraryUpdateEdition(w http.ResponseWriter, r *http.Re
 	s.libraryAPI.UpdateEditionHandler(w, r)
 }
 
+func (s *Server) handleAPILibrarySearchHardcover(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.SearchHardcoverHandler(w, r)
+}
+
+func (s *Server) handleAPILibrarySearchHardcoverByQuery(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.SearchHardcoverByQueryHandler(w, r)
+}
+
+func (s *Server) handleAPILibraryAddToHardcover(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.AddToWantToReadHandler(w, r)
+}
+
+func (s *Server) handleAPILibrarySyncEvents(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.GetSyncEventsHandler(w, r)
+}
+
 // handleAPIBookSyncLogs wraps the handler
 func (s *Server) handleAPIBookSyncLogs(w http.ResponseWriter, r *http.Request) {
 	s.apiHandler.GetBookSyncLogs(w, r)
@@ -517,3 +548,11 @@ func (s *Server) handleAPIBookSyncLog(w http.ResponseWriter, r *http.Request) {
 	s.apiHandler.GetBookSyncLog(w, r)
 }
 
+// handleAPIPurgeProfileData handles POST /api/profiles/{id}/purge
+func (s *Server) handleAPIPurgeProfileData(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.apiHandler.PurgeProfileData(w, r)
+}
