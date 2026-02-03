@@ -2261,12 +2261,13 @@ class SyncProfileApp {
     }
 
     startAutoRefresh() {
-        // Refresh statuses every 5 seconds
+        // Refresh statuses every 30 seconds when on library tab
         this.refreshInterval = setInterval(() => {
-            if (document.getElementById('sync-tab').classList.contains('active')) {
-                this.loadStatuses();
+            const libraryTab = document.getElementById('library-tab');
+            if (libraryTab && libraryTab.classList.contains('active')) {
+                // Could refresh library stats here if needed
             }
-        }, 5000);
+        }, 30000);
     }
 
     stopAutoRefresh() {
