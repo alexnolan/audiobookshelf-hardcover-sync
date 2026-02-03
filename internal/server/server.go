@@ -32,8 +32,8 @@ type Server struct {
 func New(addr string, multiUserService *multiuser.MultiUserService, authService *auth.AuthService, syncService api.SyncService, log *logger.Logger) *Server {
 	apiHandler := api.NewHandler(multiUserService, syncService, log)
 	
-	// Initialize library API with repository access
-	libraryAPI := api.NewLibraryAPI(multiUserService.GetRepository())
+	// Initialize library API with repository and collector factory access
+	libraryAPI := api.NewLibraryAPI(multiUserService.GetRepository(), multiUserService)
 	
 	// Initialize authentication handlers and middleware
 	authHandlers := auth.NewAuthHandlers(authService, log)

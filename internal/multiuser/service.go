@@ -74,6 +74,52 @@ func (s *MultiUserService) GetRepository() *database.Repository {
 	return s.repository
 }
 
+// GetGlobalConfig returns the global configuration
+func (s *MultiUserService) GetGlobalConfig() *config.Config {
+	return s.globalConfig
+}
+
+// GetLogger returns the logger
+func (s *MultiUserService) GetLogger() *logger.Logger {
+	return s.logger
+}
+
+// CreateABSCollector creates an ABSCollector for a profile
+func (s *MultiUserService) CreateABSCollector(profileID string) (*sync.ABSCollector, error) {
+	profile, err := s.GetProfile(profileID)
+	if err != nil {
+		return nil, err
+	}
+	
+	absClient := audiobookshelf.NewClient(profile.AudiobookshelfURL, profile.AudiobookshelfToken)
+	return sync.NewABSCollector(absClient, s.repository), nil
+}
+
+// CreateHCCollector creates an HCCollector for a profile
+func (s *MultiUserService) CreateHCCollector(profileID string) (*sync.HCCollector, error) {
+	profile, err := s.GetProfile(profileID)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Build Hardcover client config using global settings
+	hcCfg := hardcover.DefaultClientConfig()
+	if s.globalConfig != nil {
+		if s.globalConfig.Hardcover.BaseURL != "" {
+			hcCfg.BaseURL = s.globalConfig.Hardcover.BaseURL
+		}
+		if s.globalConfig.RateLimit.Rate > 0 {
+			hcCfg.RateLimit = s.globalConfig.RateLimit.Rate
+		}
+		if s.globalConfig.RateLimit.Burst > 0 {
+			hcCfg.Burst = s.globalConfig.RateLimit.Burst
+		}
+	}
+	
+	hcClient := hardcover.NewClientWithConfig(hcCfg, profile.HardcoverToken, s.logger)
+	return sync.NewHCCollector(hcClient, s.repository), nil
+}
+
 // ListProfiles returns all active sync profiles
 func (s *MultiUserService) ListProfiles() ([]database.SyncProfile, error) {
 	return s.repository.ListProfiles()
