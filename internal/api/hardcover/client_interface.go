@@ -89,4 +89,7 @@ type HardcoverClientInterface interface {
 
 	// GetAllUserBooks retrieves all user books for the authenticated user
 	GetAllUserBooks(ctx context.Context) ([]UserBookWithProgress, error)
+
+	// GetBookEditions retrieves all editions for a book by its ID
+	GetBookEditions(ctx context.Context, bookID int) ([]BookEdition, error)
 }

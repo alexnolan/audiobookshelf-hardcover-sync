@@ -110,14 +110,30 @@ func (c *HCCollector) CollectAllUserBooks(ctx context.Context, profileID string,
 		// Get author from book title (we'll need to fetch separately if needed)
 		author := "" // HC doesn't return author in this query
 
+		// Extract progress from user_book_reads (get the most recent reading session)
+		var progress float64
+		if len(ub.UserBookReads) > 0 && ub.UserBookReads[0].Progress != nil {
+			// Hardcover stores progress as 0-100, normalize to 0-1 for consistency with ABS
+			progress = *ub.UserBookReads[0].Progress / 100.0
+		}
+
+		// Convert edition ID to pointer (nullable in database)
+		var editionID *int64
+		if ub.EditionID > 0 {
+			eid := int64(ub.EditionID)
+			editionID = &eid
+		}
+
 		// Convert to database model
 		hcBook := database.HardcoverUserBook{
 			ProfileID:    profileID,
 			HCUserBookID: int64(ub.ID),
 			HCBookID:     int64(ub.BookID),
+			HCEditionID:  editionID,
+			Slug:         ub.Book.Slug,
 			Title:        ub.Book.Title,
 			Author:       author,
-			Progress:     ub.Progress,
+			Progress:     progress,
 			UpdatedAt:    time.Now(),
 		}
 
@@ -127,6 +143,9 @@ func (c *HCCollector) CollectAllUserBooks(ctx context.Context, profileID string,
 		}
 		if ub.Edition.ISBN13 != nil {
 			hcBook.ISBN13 = *ub.Edition.ISBN13
+		}
+		if ub.Edition.ISBN10 != nil {
+			hcBook.ISBN10 = *ub.Edition.ISBN10
 		}
 
 		// Upsert book
@@ -160,4 +179,26 @@ func (c *HCCollector) ShouldRefreshUserBooks(profileID string, maxAge time.Durat
 	}
 
 	return time.Since(lastCollection) > maxAge
+}
+
+// GetBookEditions retrieves all editions for a Hardcover book
+func (c *HCCollector) GetBookEditions(ctx context.Context, bookID int) ([]hardcover.BookEdition, error) {
+	log := logger.Get()
+
+	// Wait for rate limit
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit wait error: %w", err)
+	}
+
+	// Fetch editions from HC API
+	editions, err := c.hcClient.GetBookEditions(ctx, bookID)
+	if err != nil {
+		log.Error("Failed to fetch editions from Hardcover", map[string]interface{}{
+			"book_id": bookID,
+			"error":   err.Error(),
+		})
+		return nil, err
+	}
+
+	return editions, nil
 }

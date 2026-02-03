@@ -93,11 +93,14 @@ func New(addr string, multiUserService *multiuser.MultiUserService, authService 
 	apiMux.HandleFunc("POST /profiles/{id}/books/sync-batch", s.handleAPILibrarySyncBatch)
 	apiMux.HandleFunc("POST /profiles/{id}/collect/abs", s.handleAPILibraryCollectABS)
 	apiMux.HandleFunc("POST /profiles/{id}/collect/hardcover", s.handleAPILibraryCollectHC)
+	apiMux.HandleFunc("POST /profiles/{id}/auto-match", s.handleAPILibraryAutoMatch)
 	apiMux.HandleFunc("GET /profiles/{id}/sync-summary", s.handleAPILibrarySyncSummary)
 	apiMux.HandleFunc("GET /profiles/{id}/library-summary", s.handleAPILibrarySummary)
 	apiMux.HandleFunc("GET /profiles/{id}/books/{absBookId}/history", s.handleAPILibraryProgressHistory)
 	apiMux.HandleFunc("POST /profiles/{id}/books/{absBookId}/mapping", s.handleAPILibraryCreateMapping)
 	apiMux.HandleFunc("DELETE /profiles/{id}/books/{absBookId}/mapping", s.handleAPILibraryDeleteMapping)
+	apiMux.HandleFunc("GET /profiles/{id}/editions", s.handleAPILibraryGetEditions)
+	apiMux.HandleFunc("PUT /profiles/{id}/books/{absBookId}/edition", s.handleAPILibraryUpdateEdition)
 
 	// Mount API routes under /api with auth middleware
 	handler.Handle("/api/", s.authMiddleware.RequireAuth(http.StripPrefix("/api", apiMux)))
@@ -472,6 +475,10 @@ func (s *Server) handleAPILibraryCollectHC(w http.ResponseWriter, r *http.Reques
 	s.libraryAPI.CollectHCBooksHandler(w, r)
 }
 
+func (s *Server) handleAPILibraryAutoMatch(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.AutoMatchBooksHandler(w, r)
+}
+
 func (s *Server) handleAPILibrarySummary(w http.ResponseWriter, r *http.Request) {
 	s.libraryAPI.GetSyncSummaryHandler(w, r)
 }
@@ -490,6 +497,14 @@ func (s *Server) handleAPILibraryCreateMapping(w http.ResponseWriter, r *http.Re
 
 func (s *Server) handleAPILibraryDeleteMapping(w http.ResponseWriter, r *http.Request) {
 	s.libraryAPI.DeleteBookMappingHandler(w, r)
+}
+
+func (s *Server) handleAPILibraryGetEditions(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.GetEditionsHandler(w, r)
+}
+
+func (s *Server) handleAPILibraryUpdateEdition(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.UpdateEditionHandler(w, r)
 }
 
 // handleAPIBookSyncLogs wraps the handler

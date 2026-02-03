@@ -2459,8 +2459,9 @@ async function loadBookSyncLogs() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const data = await response.json();
-        displayBookSyncLogs(data.logs || []);
+        const result = await response.json();
+        // Response format is {success: true, data: {logs: [...], total, ...}}
+        displayBookSyncLogs(result.data?.logs || result.logs || []);
     } catch (error) {
         console.error('Failed to load book sync logs:', error);
         container.innerHTML = `<p style="padding: 2rem; color: #d32f2f;">Failed to load book sync logs: ${error.message}</p>`;
@@ -2649,6 +2650,7 @@ let libraryState = {
     profileId: '',
     currentBookDetail: null,
     searchTimeout: null,
+    absUrl: '', // ABS server URL for linking
 };
 
 // Debounced search function
@@ -2673,6 +2675,11 @@ async function loadLibraryBooks() {
         return;
     }
 
+    // Remember if search input had focus
+    const searchInput = document.getElementById('library-search');
+    const hadFocus = searchInput && document.activeElement === searchInput;
+    const cursorPosition = hadFocus ? searchInput.selectionStart : 0;
+
     try {
         const params = new URLSearchParams({
             page: libraryState.currentPage,
@@ -2687,8 +2694,19 @@ async function loadLibraryBooks() {
         
         const data = await response.json();
         if (data.success) {
+            // Store ABS URL for linking
+            libraryState.absUrl = data.abs_url || '';
             renderLibraryBooks(data.data, data.pagination);
             await loadSyncSummary();
+            
+            // Restore focus and cursor position if search was active
+            if (hadFocus) {
+                const newSearchInput = document.getElementById('library-search');
+                if (newSearchInput) {
+                    newSearchInput.focus();
+                    newSearchInput.setSelectionRange(cursorPosition, cursorPosition);
+                }
+            }
         } else {
             app.showToast(data.error || 'Failed to load books', 'error');
         }
@@ -2700,6 +2718,10 @@ async function loadLibraryBooks() {
 
 // Render books table and controls
 function renderLibraryBooks(books, pagination) {
+    console.log('renderLibraryBooks called with:', { books, pagination });
+    console.log('Books is array:', Array.isArray(books));
+    console.log('Books length:', books ? books.length : 'null/undefined');
+    
     let html = `
         <div style="margin-bottom: 1.5rem;">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;" id="library-stats">
@@ -2731,6 +2753,7 @@ function renderLibraryBooks(books, pagination) {
                 <button class="btn btn-primary" onclick="syncAllBooks()">🔄 Sync All</button>
                 <button class="btn btn-primary" onclick="collectABSBooks()">📥 Collect ABS</button>
                 <button class="btn btn-primary" onclick="collectHardcoverBooks()">📥 Collect HC</button>
+                <button class="btn btn-primary" onclick="autoMatchBooks()">🔗 Auto-Match</button>
             </div>
 
             <div style="overflow-x: auto;">
@@ -2739,45 +2762,145 @@ function renderLibraryBooks(books, pagination) {
                         <tr>
                             <th style="padding: 0.75rem; text-align: left;">Title</th>
                             <th style="padding: 0.75rem; text-align: left;">Author</th>
-                            <th style="padding: 0.75rem; text-align: center;">ABS</th>
-                            <th style="padding: 0.75rem; text-align: center;">HC</th>
+                            <th style="padding: 0.75rem; text-align: left;">Narrator</th>
+                            <th style="padding: 0.75rem; text-align: center;" title="AudiobookShelf Progress"><img src="https://www.audiobookshelf.org/Logo.png" alt="ABS" style="height: 20px; vertical-align: middle;"></th>
+                            <th style="padding: 0.75rem; text-align: center;" title="Sync Status (click to sync)">🔄</th>
+                            <th style="padding: 0.75rem; text-align: center;" title="Hardcover Book"><img src="https://is1-ssl.mzstatic.com/image/thumb/Purple116/v4/7a/3c/73/7a3c7350-58c1-b673-e3b4-adbe9f873ed4/AppIcon-0-0-1x_U007epad-0-85-220.jpeg/1200x630wa.png" alt="HC" style="height: 20px; vertical-align: middle;"> Book</th>
+                            <th style="padding: 0.75rem; text-align: center;" title="Hardcover Edition (click to change)">Edition</th>
                             <th style="padding: 0.75rem; text-align: center;">Diff</th>
-                            <th style="padding: 0.75rem; text-align: center;">Status</th>
-                            <th style="padding: 0.75rem; text-align: center;">Actions</th>
                         </tr>
                     </thead>
                     <tbody>`;
 
     if (!books || books.length === 0) {
-        html += '<tr><td colspan="7" style="padding: 2rem; text-align: center; color: #999;">No books found</td></tr>';
+        html += '<tr><td colspan="8" style="padding: 2rem; text-align: center; color: #999;">No books found</td></tr>';
     } else {
         books.forEach(book => {
-            const statusBadge = getStatusBadge(book);
             const absProgress = (book.abs_progress * 100).toFixed(1);
             const hcProgress = (book.hardcover_progress * 100).toFixed(1);
             const diff = Math.abs(book.progress_diff * 100).toFixed(1);
             
-            html += `<tr style="border-bottom: 1px solid #eee; hover-effect">
+            // Build ABS tooltip with metadata
+            const absTooltipParts = [`Progress: ${absProgress}%`];
+            if (book.abs_asin) absTooltipParts.push(`ASIN: ${book.abs_asin}`);
+            if (book.abs_isbn) absTooltipParts.push(`ISBN: ${book.abs_isbn}`);
+            if (book.abs_narrator) absTooltipParts.push(`Narrator: ${book.abs_narrator}`);
+            
+            // Build ABS link - opens audiobook page in new tab
+            const absUrl = libraryState.absUrl ? `${libraryState.absUrl}/item/${book.abs_id}` : null;
+            if (absUrl) {
+                absTooltipParts.push('Click to open in AudiobookShelf');
+            }
+            const absTooltip = absTooltipParts.join('\n');
+            const absLinkStart = absUrl 
+                ? `<a href="${absUrl}" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; cursor: pointer;" title="${escapeHtml(absTooltip)}">` 
+                : `<span title="${escapeHtml(absTooltip)}">`;
+            const absLinkEnd = absUrl ? '</a>' : '</span>';
+            
+            // Build HC Book tooltip with metadata
+            const isMapped = book.hc_book_id || book.hc_slug;
+            const hcBookTooltipParts = [];
+            if (isMapped) {
+                hcBookTooltipParts.push(`Progress: ${hcProgress}%`);
+                if (book.hc_title) hcBookTooltipParts.push(`Title: ${book.hc_title}`);
+                if (book.hc_status_name) hcBookTooltipParts.push(`Status: ${book.hc_status_name}`);
+                if (book.match_method) hcBookTooltipParts.push(`Match: ${book.match_method} (${(book.match_confidence * 100).toFixed(0)}%)`);
+                hcBookTooltipParts.push('Click to open book in Hardcover');
+            } else {
+                hcBookTooltipParts.push('Not mapped to Hardcover');
+            }
+            const hcBookTooltip = hcBookTooltipParts.join('\n');
+            
+            // Build HC Edition tooltip with metadata
+            const hcEditionTooltipParts = [];
+            if (isMapped && book.hc_edition_id) {
+                hcEditionTooltipParts.push(`Edition ID: ${book.hc_edition_id}`);
+                if (book.hc_asin) hcEditionTooltipParts.push(`ASIN: ${book.hc_asin}`);
+                if (book.hc_isbn13) hcEditionTooltipParts.push(`ISBN-13: ${book.hc_isbn13}`);
+                if (book.hc_isbn10) hcEditionTooltipParts.push(`ISBN-10: ${book.hc_isbn10}`);
+                hcEditionTooltipParts.push('Click to change edition');
+            } else if (isMapped) {
+                hcEditionTooltipParts.push('No edition set');
+                hcEditionTooltipParts.push('Click to select edition');
+            } else {
+                hcEditionTooltipParts.push('Not mapped');
+            }
+            const hcEditionTooltip = hcEditionTooltipParts.join('\n');
+            
+            // Build HC Book link - always goes to book page
+            let hcBookUrl = null;
+            if (book.hc_slug) {
+                hcBookUrl = `https://hardcover.app/books/${book.hc_slug}`;
+            } else if (book.hc_book_id) {
+                hcBookUrl = `https://hardcover.app/books/${book.hc_book_id}`;
+            }
+            
+            // Build HC Edition link - goes to specific edition page
+            let hcEditionUrl = null;
+            if (book.hc_slug && book.hc_edition_id) {
+                hcEditionUrl = `https://hardcover.app/books/${book.hc_slug}/editions/${book.hc_edition_id}`;
+            }
+            
+            // Sync status indicator - clickable to perform sync
+            let syncIndicator;
+            let syncTooltipParts = [];
+            if (!isMapped) {
+                // Not mapped - red X, not clickable for sync
+                syncTooltipParts.push('Not mapped to Hardcover');
+                if (book.abs_asin) syncTooltipParts.push(`ABS ASIN: ${book.abs_asin}`);
+                if (book.abs_isbn) syncTooltipParts.push(`ABS ISBN: ${book.abs_isbn}`);
+                syncIndicator = `<span style="color: #f44336; font-size: 1.3rem; cursor: default;" title="${escapeHtml(syncTooltipParts.join('\n'))}">✗</span>`;
+            } else if (book.in_sync) {
+                // In sync - green double arrow, clickable to re-sync
+                syncTooltipParts.push('✔ In sync');
+                if (book.match_method) syncTooltipParts.push(`Match: ${book.match_method}`);
+                syncTooltipParts.push('Click to re-sync');
+                syncIndicator = `<span style="color: #4CAF50; font-size: 1.3rem; cursor: pointer;" title="${escapeHtml(syncTooltipParts.join('\n'))}" onclick="syncSingleBook('${book.abs_id}')">⇄</span>`;
+            } else {
+                // Needs sync - amber double arrow, clickable to sync
+                syncTooltipParts.push(`⚠ Needs sync (${diff}% diff)`);
+                if (book.match_method) syncTooltipParts.push(`Match: ${book.match_method}`);
+                syncTooltipParts.push('Click to sync');
+                syncIndicator = `<span style="color: #FF9800; font-size: 1.3rem; cursor: pointer;" title="${escapeHtml(syncTooltipParts.join('\n'))}" onclick="syncSingleBook('${book.abs_id}')">⇄</span>`;
+            }
+            
+            // Edition cell - clickable to select/change edition
+            let editionCell;
+            if (isMapped) {
+                const editionDisplay = book.hc_edition_id ? `#${book.hc_edition_id}` : '-';
+                const editionLinkHtml = hcEditionUrl 
+                    ? `<a href="${hcEditionUrl}" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: #2196F3;" onclick="event.stopPropagation();">${editionDisplay}</a>`
+                    : editionDisplay;
+                editionCell = `<span style="cursor: pointer;" title="${escapeHtml(hcEditionTooltip)}" onclick="openEditionSelector('${book.abs_id}', ${book.hc_book_id || 'null'}, '${escapeHtml(book.hc_slug || '')}')">
+                    ${editionLinkHtml} <span style="font-size: 0.8rem;">✏️</span>
+                </span>`;
+            } else {
+                editionCell = `<span style="color: #999;" title="${escapeHtml(hcEditionTooltip)}">-</span>`;
+            }
+            
+            html += `<tr style="border-bottom: 1px solid #eee;">
                 <td style="padding: 0.75rem;">${escapeHtml(book.abs_title)}</td>
-                <td style="padding: 0.75rem;">${escapeHtml(book.abs_author || 'Unknown')}</td>
+                <td style="padding: 0.75rem;">${escapeHtml(book.abs_author || '')}</td>
+                <td style="padding: 0.75rem; color: #666; font-size: 0.85rem;">${escapeHtml(book.abs_narrator || '')}</td>
                 <td style="padding: 0.75rem; text-align: center;">
+                    ${absLinkStart}
                     <div style="width: 60px; height: 8px; background: #eee; border-radius: 4px; margin: 0 auto; overflow: hidden;">
                         <div style="width: ${absProgress}%; height: 100%; background: #4CAF50;"></div>
                     </div>
-                    <small>${absProgress}%</small>
+                    <small>${absProgress}%${absUrl ? ' 🔗' : ''}</small>
+                    ${absLinkEnd}
                 </td>
+                <td style="padding: 0.75rem; text-align: center;">${syncIndicator}</td>
                 <td style="padding: 0.75rem; text-align: center;">
+                    ${isMapped ? `<a href="${hcBookUrl}" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; cursor: pointer;" title="${escapeHtml(hcBookTooltip)}">` : `<span title="${escapeHtml(hcBookTooltip)}">`}
                     <div style="width: 60px; height: 8px; background: #eee; border-radius: 4px; margin: 0 auto; overflow: hidden;">
-                        <div style="width: ${hcProgress}%; height: 100%; background: #2196F3;"></div>
+                        <div style="width: ${hcProgress}%; height: 100%; background: ${isMapped ? '#2196F3' : '#999'};"></div>
                     </div>
-                    <small>${hcProgress}%</small>
+                    <small>${isMapped ? `${hcProgress}% 🔗` : '-'}</small>
+                    ${isMapped ? '</a>' : '</span>'}
                 </td>
+                <td style="padding: 0.75rem; text-align: center;">${editionCell}</td>
                 <td style="padding: 0.75rem; text-align: center;"><strong>${diff}%</strong></td>
-                <td style="padding: 0.75rem; text-align: center;">${statusBadge}</td>
-                <td style="padding: 0.75rem; text-align: center;">
-                    <button class="btn btn-secondary" onclick="openBookDetail('${book.abs_id}')" style="margin: 0 0.25rem; padding: 0.35rem 0.75rem; font-size: 0.85rem;">Detail</button>
-                    <button class="btn btn-secondary" onclick="syncSingleBook('${book.abs_id}')" style="margin: 0 0.25rem; padding: 0.35rem 0.75rem; font-size: 0.85rem;">Sync</button>
-                </td>
             </tr>`;
         });
     }
@@ -2800,17 +2923,18 @@ function renderLibraryBooks(books, pagination) {
 
 // Get status badge HTML
 function getStatusBadge(book) {
+    const baseStyle = 'color: white; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.8rem; white-space: nowrap; display: inline-block;';
     if (book.abs_id === null || book.hc_book_id === null) {
-        return '<span style="background: #999; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem;">Unmapped</span>';
+        return `<span style="background: #999; ${baseStyle}">Unmapped</span>`;
     }
     if (!book.sync_enabled) {
-        return '<span style="background: #f44336; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem;">Disabled</span>';
+        return `<span style="background: #f44336; ${baseStyle}">Disabled</span>`;
     }
     const diff = Math.abs(book.progress_diff);
     if (diff < 0.01) {
-        return '<span style="background: #4CAF50; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem;">✓ In Sync</span>';
+        return `<span style="background: #4CAF50; ${baseStyle}">✓ Synced</span>`;
     }
-    return '<span style="background: #FF9800; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem;">⚠ Needs Sync</span>';
+    return `<span style="background: #FF9800; ${baseStyle}">⚠ Sync</span>`;
 }
 
 // Load and render sync summary statistics
@@ -3023,6 +3147,164 @@ async function syncSingleBookFromDetail(absBookId) {
     document.querySelectorAll('[id="book-detail-modal"]').forEach(el => el.style.display = 'none');
 }
 
+// Edition selector state
+let editionSelectorState = {
+    absBookId: null,
+    hcBookId: null,
+    hcSlug: null,
+    editions: []
+};
+
+// Open edition selector modal
+async function openEditionSelector(absBookId, hcBookId, hcSlug) {
+    if (!libraryState.profileId || !hcBookId) {
+        app.showToast('Book must be mapped to Hardcover first', 'error');
+        return;
+    }
+
+    editionSelectorState = { absBookId, hcBookId, hcSlug, editions: [] };
+
+    // Show loading modal
+    const modalHtml = `
+        <div id="edition-selector-modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+            <div style="background: white; border-radius: 8px; padding: 1.5rem; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto;">
+                <h3 style="margin-top: 0;">Select Edition</h3>
+                <div id="edition-list" style="text-align: center; padding: 2rem;">
+                    <div class="loading-spinner"></div>
+                    <p>Loading editions...</p>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+                    <button class="btn btn-secondary" onclick="closeEditionSelector()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    // Fetch editions
+    try {
+        const response = await fetch(`/api/profiles/${libraryState.profileId}/editions?book_id=${hcBookId}`);
+        const data = await response.json();
+
+        if (data.success && data.data) {
+            editionSelectorState.editions = data.data;
+            renderEditionList(data.data);
+        } else {
+            document.getElementById('edition-list').innerHTML = `
+                <p style="color: #f44336;">Failed to load editions: ${data.error || 'Unknown error'}</p>
+            `;
+        }
+    } catch (error) {
+        console.error('Failed to fetch editions:', error);
+        document.getElementById('edition-list').innerHTML = `
+            <p style="color: #f44336;">Failed to load editions</p>
+        `;
+    }
+}
+
+// Render edition list
+function renderEditionList(editions) {
+    if (!editions || editions.length === 0) {
+        document.getElementById('edition-list').innerHTML = `
+            <p style="color: #999;">No editions found for this book</p>
+        `;
+        return;
+    }
+
+    // Reading format names
+    const formatNames = {
+        1: '📖 Physical',
+        2: '🎧 Audiobook',
+        3: '📱 eBook',
+        4: '📚 Other'
+    };
+
+    let html = `
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+            <thead style="background: #f5f5f5;">
+                <tr>
+                    <th style="padding: 0.5rem; text-align: left;">Format</th>
+                    <th style="padding: 0.5rem; text-align: left;">ASIN</th>
+                    <th style="padding: 0.5rem; text-align: left;">ISBN-13</th>
+                    <th style="padding: 0.5rem; text-align: left;">Publisher</th>
+                    <th style="padding: 0.5rem; text-align: center;">Duration</th>
+                    <th style="padding: 0.5rem; text-align: center;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    editions.forEach(ed => {
+        const format = formatNames[ed.reading_format_id] || `Format ${ed.reading_format_id}`;
+        const duration = ed.audio_seconds ? `${Math.floor(ed.audio_seconds / 3600)}h ${Math.floor((ed.audio_seconds % 3600) / 60)}m` : '-';
+        const isAudiobook = ed.reading_format_id === 2;
+
+        html += `
+            <tr style="border-bottom: 1px solid #eee; ${isAudiobook ? 'background: #e3f2fd;' : ''}">
+                <td style="padding: 0.5rem;">${format}</td>
+                <td style="padding: 0.5rem; font-family: monospace; font-size: 0.8rem;">${ed.asin || '-'}</td>
+                <td style="padding: 0.5rem; font-family: monospace; font-size: 0.8rem;">${ed.isbn_13 || '-'}</td>
+                <td style="padding: 0.5rem;">${escapeHtml(ed.publisher || '-')}</td>
+                <td style="padding: 0.5rem; text-align: center;">${duration}</td>
+                <td style="padding: 0.5rem; text-align: center;">
+                    <button class="btn btn-primary" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;" onclick="selectEdition(${ed.id})">
+                        Select
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    html += '</tbody></table>';
+    
+    // Add link to view on Hardcover
+    if (editionSelectorState.hcSlug) {
+        html += `
+            <p style="margin-top: 1rem; text-align: center;">
+                <a href="https://hardcover.app/books/${editionSelectorState.hcSlug}/editions" target="_blank" rel="noopener noreferrer">
+                    View all editions on Hardcover ↗
+                </a>
+            </p>
+        `;
+    }
+
+    document.getElementById('edition-list').innerHTML = html;
+}
+
+// Select an edition
+async function selectEdition(editionId) {
+    if (!libraryState.profileId || !editionSelectorState.absBookId) return;
+
+    try {
+        app.showToast('Updating edition...', 'info');
+
+        const response = await fetch(`/api/profiles/${libraryState.profileId}/books/${editionSelectorState.absBookId}/edition`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ edition_id: editionId })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            app.showToast('Edition updated successfully!', 'success');
+            closeEditionSelector();
+            loadLibraryBooks(); // Refresh the library view
+        } else {
+            app.showToast(data.error || 'Failed to update edition', 'error');
+        }
+    } catch (error) {
+        console.error('Failed to update edition:', error);
+        app.showToast('Failed to update edition', 'error');
+    }
+}
+
+// Close edition selector modal
+function closeEditionSelector() {
+    const modal = document.getElementById('edition-selector-modal');
+    if (modal) modal.remove();
+    editionSelectorState = { absBookId: null, hcBookId: null, hcSlug: null, editions: [] };
+}
+
 // Sync all books
 async function syncAllBooks() {
     if (!libraryState.profileId) return;
@@ -3097,6 +3379,29 @@ async function collectHardcoverBooks() {
     } catch (error) {
         console.error('Collection error:', error);
         app.showToast('Collection failed', 'error');
+    }
+}
+
+// Auto-match ABS books to Hardcover
+async function autoMatchBooks() {
+    if (!libraryState.profileId) return;
+
+    try {
+        app.showToast('Auto-matching books...', 'info');
+        const response = await fetch(`/api/profiles/${libraryState.profileId}/auto-match`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            app.showToast('Auto-matching completed! Refreshing...', 'success');
+            loadLibraryBooks();
+        } else {
+            app.showToast(data.error || 'Auto-match failed', 'error');
+        }
+    } catch (error) {
+        console.error('Auto-match error:', error);
+        app.showToast('Auto-match failed', 'error');
     }
 }
 

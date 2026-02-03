@@ -996,6 +996,100 @@ func (c *Client) GetBookByID(ctx context.Context, bookID string) (*models.Hardco
 	return hcBook, nil
 }
 
+// BookEdition represents an edition of a book for the edition selector
+type BookEdition struct {
+	ID              int     `json:"id"`
+	ASIN            string  `json:"asin,omitempty"`
+	ISBN13          string  `json:"isbn_13,omitempty"`
+	ISBN10          string  `json:"isbn_10,omitempty"`
+	ReadingFormatID int     `json:"reading_format_id"`
+	AudioSeconds    int     `json:"audio_seconds,omitempty"`
+	Title           string  `json:"title,omitempty"`
+	Publisher       string  `json:"publisher,omitempty"`
+	ReleaseDate     string  `json:"release_date,omitempty"`
+}
+
+// GetBookEditions retrieves all editions for a book by its ID
+func (c *Client) GetBookEditions(ctx context.Context, bookID int) ([]BookEdition, error) {
+	log := c.logger.With(map[string]interface{}{
+		"book_id": bookID,
+		"method":  "GetBookEditions",
+	})
+	log.Debug("Fetching editions for book")
+
+	const query = `
+	query GetBookEditions($bookId: Int!) {
+		editions(where: { book_id: { _eq: $bookId } }, order_by: { id: asc }) {
+			id
+			asin
+			isbn_13
+			isbn_10
+			reading_format_id
+			audio_seconds
+			title
+			release_date
+			publisher { name }
+		}
+	}`
+
+	var response struct {
+		Editions []struct {
+			ID              int     `json:"id"`
+			ASIN            *string `json:"asin"`
+			ISBN13          *string `json:"isbn_13"`
+			ISBN10          *string `json:"isbn_10"`
+			ReadingFormatID int     `json:"reading_format_id"`
+			AudioSeconds    *int    `json:"audio_seconds"`
+			Title           *string `json:"title"`
+			ReleaseDate     *string `json:"release_date"`
+			Publisher       *struct {
+				Name string `json:"name"`
+			} `json:"publisher"`
+		} `json:"editions"`
+	}
+
+	if err := c.GraphQLQuery(ctx, query, map[string]interface{}{"bookId": bookID}, &response); err != nil {
+		log.Error("Failed to fetch editions", map[string]interface{}{"error": err.Error()})
+		return nil, fmt.Errorf("failed to fetch editions: %w", err)
+	}
+
+	editions := make([]BookEdition, 0, len(response.Editions))
+	for _, e := range response.Editions {
+		ed := BookEdition{
+			ID:              e.ID,
+			ReadingFormatID: e.ReadingFormatID,
+		}
+		if e.ASIN != nil {
+			ed.ASIN = *e.ASIN
+		}
+		if e.ISBN13 != nil {
+			ed.ISBN13 = *e.ISBN13
+		}
+		if e.ISBN10 != nil {
+			ed.ISBN10 = *e.ISBN10
+		}
+		if e.AudioSeconds != nil {
+			ed.AudioSeconds = *e.AudioSeconds
+		}
+		if e.Title != nil {
+			ed.Title = *e.Title
+		}
+		if e.ReleaseDate != nil {
+			ed.ReleaseDate = *e.ReleaseDate
+		}
+		if e.Publisher != nil {
+			ed.Publisher = e.Publisher.Name
+		}
+		editions = append(editions, ed)
+	}
+
+	log.Info("Fetched editions for book", map[string]interface{}{
+		"edition_count": len(editions),
+	})
+
+	return editions, nil
+}
+
 // GetUserBook gets user book information by ID
 // Implements the HardcoverClientInterface
 func (c *Client) GetUserBook(ctx context.Context, userBookID string) (*models.HardcoverBook, error) {
@@ -3622,16 +3716,22 @@ type UserBookWithProgress struct {
 	BookID    int     `json:"book_id"`
 	StatusID  int     `json:"status_id"`
 	EditionID int     `json:"edition_id"`
-	Progress  float64 `json:"progress"`
+	Progress  float64 `json:"progress"` // Populated from user_book_reads
 	Book      struct {
 		ID    int    `json:"id"`
 		Title string `json:"title"`
+		Slug  string `json:"slug"`
 	} `json:"book"`
 	Edition struct {
 		ID     int     `json:"id"`
 		ASIN   *string `json:"asin"`
 		ISBN13 *string `json:"isbn_13"`
+		ISBN10 *string `json:"isbn_10"`
 	} `json:"edition"`
+	UserBookReads []struct {
+		Progress        *float64 `json:"progress"`
+		ProgressSeconds *int     `json:"progress_seconds"`
+	} `json:"user_book_reads"`
 }
 
 // GetAllUserBooks retrieves all user books for the authenticated user
@@ -3670,11 +3770,17 @@ func (c *Client) GetAllUserBooks(ctx context.Context) ([]UserBookWithProgress, e
 				book {
 					id
 					title
+					slug
 				}
 				edition {
 					id
 					asin
 					isbn_13
+					isbn_10
+				}
+				user_book_reads(limit: 1, order_by: {started_at: desc_nulls_last}) {
+					progress
+					progress_seconds
 				}
 			}
 		}`
