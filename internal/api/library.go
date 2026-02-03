@@ -42,6 +42,59 @@ type PaginationInfo struct {
 	TotalPages int `json:"total_pages"`
 }
 
+// FlatBookComparison is a flattened view of book comparison data for the frontend
+type FlatBookComparison struct {
+	ABSID             string  `json:"abs_id"`
+	ABSTitle          string  `json:"abs_title"`
+	ABSAuthor         string  `json:"abs_author"`
+	ABSProgress       float64 `json:"abs_progress"`
+	HardcoverProgress float64 `json:"hardcover_progress"`
+	ProgressDiff      float64 `json:"progress_diff"`
+	InSync            bool    `json:"in_sync"`
+	SyncStatus        string  `json:"sync_status"`
+	SyncEnabled       bool    `json:"sync_enabled"`
+	HCBookID          *int64  `json:"hc_book_id,omitempty"`
+	HCUserBookID      *int64  `json:"hc_user_book_id,omitempty"`
+	MatchMethod       string  `json:"match_method,omitempty"`
+	MatchConfidence   float64 `json:"match_confidence,omitempty"`
+}
+
+// flattenComparison converts a BookComparison to a flat structure for frontend
+func flattenComparison(comp database.BookComparison) FlatBookComparison {
+	flat := FlatBookComparison{
+		ABSID:        comp.ABSBook.ABSID,
+		ABSTitle:     comp.ABSBook.Title,
+		ABSAuthor:    comp.ABSBook.Author,
+		ABSProgress:  comp.ABSBook.Progress,
+		ProgressDiff: comp.ProgressDiff,
+		InSync:       comp.InSync,
+		SyncStatus:   comp.SyncStatus,
+		SyncEnabled:  true, // Default to enabled
+	}
+
+	// Set HC progress if mapped
+	if comp.HardcoverBook != nil {
+		flat.HardcoverProgress = comp.HardcoverBook.Progress
+		hcBookID := comp.HardcoverBook.HCBookID
+		flat.HCBookID = &hcBookID
+		hcUserBookID := comp.HardcoverBook.HCUserBookID
+		flat.HCUserBookID = &hcUserBookID
+	}
+
+	// Check sync config
+	if comp.Config != nil {
+		flat.SyncEnabled = comp.Config.SyncEnabled
+	}
+
+	// Add mapping info
+	if comp.Mapping != nil {
+		flat.MatchMethod = string(comp.Mapping.MatchMethod)
+		flat.MatchConfidence = comp.Mapping.MatchConfidence
+	}
+
+	return flat
+}
+
 // GetBooksHandler retrieves books with comparison data
 func (api *LibraryAPI) GetBooksHandler(w http.ResponseWriter, r *http.Request) {
 	log := logger.Get()
@@ -90,12 +143,18 @@ func (api *LibraryAPI) GetBooksHandler(w http.ResponseWriter, r *http.Request) {
 
 	totalPages := (int(total) + limit - 1) / limit
 
+	// Flatten comparisons for frontend
+	flatBooks := make([]FlatBookComparison, len(comparisons))
+	for i, comp := range comparisons {
+		flatBooks[i] = flattenComparison(comp)
+	}
+
 	w.WriteHeader(http.StatusOK)
 	// Return response matching frontend expectations:
 	// data = books array, pagination at top level
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
-		"data":    comparisons,
+		"data":    flatBooks,
 		"pagination": PaginationInfo{
 			Page:       page,
 			Limit:      limit,
