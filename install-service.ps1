@@ -1,9 +1,18 @@
 # Run this script as Administrator to install the AudiobookshelfHardcoverSync service
 
 $serviceName = "AudiobookshelfHardcoverSync"
-$exePath = "C:\vscode\github\audiobookshelf-hardcover-sync\bin\audiobookshelf-hardcover-sync.exe"
-$workingDir = "C:\vscode\github\audiobookshelf-hardcover-sync"
-$configPath = "C:\vscode\github\audiobookshelf-hardcover-sync\config.yaml"
+# Auto-detect paths based on script location
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$exePath = Join-Path $scriptDir "bin\audiobookshelf-hardcover-sync.exe"
+$workingDir = $scriptDir
+$configPath = Join-Path $scriptDir "config.yaml"
+
+# Verify the executable exists
+if (-not (Test-Path $exePath)) {
+    Write-Host "ERROR: Executable not found at $exePath" -ForegroundColor Red
+    Write-Host "Please run 'go build -o bin/audiobookshelf-hardcover-sync.exe ./cmd/audiobookshelf-hardcover-sync' first." -ForegroundColor Yellow
+    exit 1
+}
 
 # Install the service
 Write-Host "Installing service..." -ForegroundColor Green
