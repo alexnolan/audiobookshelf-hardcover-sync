@@ -3615,3 +3615,109 @@ func (c *Client) CheckExistingFinishedRead(ctx context.Context, input CheckExist
 		LastFinishedAt:  lastFinishedAt,
 	}, nil
 }
+
+// UserBookWithProgress represents a user book with reading progress info
+type UserBookWithProgress struct {
+	ID        int     `json:"id"`
+	BookID    int     `json:"book_id"`
+	StatusID  int     `json:"status_id"`
+	EditionID int     `json:"edition_id"`
+	Progress  float64 `json:"progress"`
+	Book      struct {
+		ID    int    `json:"id"`
+		Title string `json:"title"`
+	} `json:"book"`
+	Edition struct {
+		ID     int     `json:"id"`
+		ASIN   *string `json:"asin"`
+		ISBN13 *string `json:"isbn_13"`
+	} `json:"edition"`
+}
+
+// GetAllUserBooks retrieves all user books for the authenticated user
+// Returns books with their associated book and edition info
+func (c *Client) GetAllUserBooks(ctx context.Context) ([]UserBookWithProgress, error) {
+	log := c.logger.With(map[string]interface{}{
+		"method": "GetAllUserBooks",
+	})
+	log.Debug("Fetching all user books from Hardcover")
+
+	// Get current user ID first
+	userID, err := c.GetCurrentUserID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current user ID: %w", err)
+	}
+
+	// Query all user books for this user
+	// Note: We need to paginate since there could be many books
+	var allBooks []UserBookWithProgress
+	offset := 0
+	limit := 100 // Fetch 100 at a time
+
+	for {
+		query := `
+		query GetAllUserBooks($userId: Int!, $limit: Int!, $offset: Int!) {
+			user_books(
+				where: {user_id: {_eq: $userId}},
+				limit: $limit,
+				offset: $offset,
+				order_by: {book: {title: asc}}
+			) {
+				id
+				book_id
+				status_id
+				edition_id
+				book {
+					id
+					title
+				}
+				edition {
+					id
+					asin
+					isbn_13
+				}
+			}
+		}`
+
+		var response struct {
+			UserBooks []UserBookWithProgress `json:"user_books"`
+		}
+
+		err := c.GraphQLQuery(ctx, query, map[string]interface{}{
+			"userId": userID,
+			"limit":  limit,
+			"offset": offset,
+		}, &response)
+
+		if err != nil {
+			log.Error("Failed to fetch user books", map[string]interface{}{
+				"error":  err.Error(),
+				"offset": offset,
+			})
+			return nil, fmt.Errorf("failed to fetch user books: %w", err)
+		}
+
+		if len(response.UserBooks) == 0 {
+			break // No more books
+		}
+
+		allBooks = append(allBooks, response.UserBooks...)
+		log.Debug("Fetched batch of user books", map[string]interface{}{
+			"batch_size":    len(response.UserBooks),
+			"total_so_far":  len(allBooks),
+			"offset":        offset,
+		})
+
+		if len(response.UserBooks) < limit {
+			break // Last page
+		}
+
+		offset += limit
+	}
+
+	log.Info("Retrieved all user books from Hardcover", map[string]interface{}{
+		"total_books": len(allBooks),
+	})
+
+	return allBooks, nil
+}
