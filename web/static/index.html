@@ -24,9 +24,7 @@
         <nav class="tabs">
             <button class="tab-button active" onclick="showTab('users')">Profiles</button>
             <button class="tab-button" onclick="showTab('library')">Library</button>
-            <button class="tab-button" onclick="showTab('sync')">Sync Status</button>
-            <button class="tab-button" onclick="showTab('book-logs')">Book Sync Logs</button>
-            <button class="tab-button" onclick="showTab('add-user')">Add Profile</button>
+            <button class="tab-button" onclick="showTab('history')">Sync History</button>
         </nav>
 
         <!-- Library Tab -->
@@ -49,7 +47,43 @@
         <div id="users-tab" class="tab-content active">
             <div class="section-header">
                 <h2>Manage Sync Profiles</h2>
-                <button class="btn btn-primary" onclick="refreshUsers()">🔄 Refresh</button>
+                <div class="header-controls">
+                    <button class="btn btn-primary" onclick="toggleAddProfileForm()">➕ Add Profile</button>
+                    <button class="btn btn-secondary" onclick="refreshUsers()">🔄 Refresh</button>
+                </div>
+            </div>
+            
+            <!-- Collapsible Add Profile Form -->
+            <div id="add-profile-section" style="display: none; margin-bottom: 1.5rem; padding: 1.5rem; background: #f9f9f9; border-radius: 8px; border: 1px solid #e0e0e0;">
+                <h3 style="margin-top: 0;">Add New Sync Profile</h3>
+                <form id="inline-add-user-form" class="user-form" onsubmit="handleAddUser(event)">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem;">
+                        <div class="form-group">
+                            <label for="inline-user-id">User ID:</label>
+                            <input type="text" id="inline-user-id" name="id" required placeholder="unique-user-id">
+                        </div>
+                        <div class="form-group">
+                            <label for="inline-user-name">Display Name:</label>
+                            <input type="text" id="inline-user-name" name="name" required placeholder="John Doe">
+                        </div>
+                        <div class="form-group">
+                            <label for="inline-abs-url">Audiobookshelf URL:</label>
+                            <input type="url" id="inline-abs-url" name="audiobookshelf_url" required placeholder="https://your-audiobookshelf.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="inline-abs-token">Audiobookshelf Token:</label>
+                            <input type="password" id="inline-abs-token" name="audiobookshelf_token" required placeholder="Your ABS API token">
+                        </div>
+                        <div class="form-group">
+                            <label for="inline-hc-token">Hardcover Token:</label>
+                            <input type="password" id="inline-hc-token" name="hardcover_token" required placeholder="Your Hardcover API token">
+                        </div>
+                    </div>
+                    <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                        <button type="submit" class="btn btn-primary">Create Profile</button>
+                        <button type="button" class="btn btn-secondary" onclick="toggleAddProfileForm()">Cancel</button>
+                    </div>
+                </form>
             </div>
             
             <div id="users-list" class="users-grid">
@@ -57,32 +91,10 @@
             </div>
         </div>
 
-        <!-- Sync Status Tab -->
-        <div id="sync-tab" class="tab-content">
+        <!-- Sync History Tab (renamed from Book Sync Logs) -->
+        <div id="history-tab" class="tab-content">
             <div class="section-header">
-                <h2>Sync Status</h2>
-                <button class="btn btn-primary" onclick="refreshStatus()">🔄 Refresh</button>
-            </div>
-            
-            <div id="sync-status" class="status-grid">
-                <!-- Sync statuses will be loaded here -->
-            </div>
-            
-            <div id="sync-summary-container" style="margin-top: 2rem; display: none;">
-                <h3>Sync Summary</h3>
-                <div id="sync-summary-tabs" class="tabs" style="margin: 0 0 1rem 0;">
-                    <!-- Profile tabs will be added here -->
-                </div>
-                <div id="sync-summary-content">
-                    <!-- Summary content will be loaded here -->
-                </div>
-            </div>
-        </div>
-
-        <!-- Book Sync Logs Tab -->
-        <div id="book-logs-tab" class="tab-content">
-            <div class="section-header">
-                <h2>Book Sync Logs</h2>
+                <h2>Sync History</h2>
                 <div class="header-controls">
                     <select id="profile-select" onchange="loadBookSyncLogs()" style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
                         <option value="">Select a Profile...</option>
@@ -101,140 +113,6 @@
             <div id="book-logs-container" class="book-logs-grid">
                 <!-- Book sync logs will be loaded here -->
             </div>
-        </div>
-        <div id="add-user-tab" class="tab-content">
-            <div class="section-header">
-                <h2>Add New Sync Profile</h2>
-            </div>
-            
-            <form id="add-user-form" class="user-form">
-                <div class="form-group">
-                    <label for="user-id">User ID:</label>
-                    <input type="text" id="user-id" name="id" required placeholder="unique-user-id">
-                    <small>Must be unique and contain only letters, numbers, hyphens, and underscores</small>
-                </div>
-
-                <div class="form-group">
-                    <label for="user-name">Display Name:</label>
-                    <input type="text" id="user-name" name="name" required placeholder="John Doe">
-                </div>
-
-                <div class="form-group">
-                    <label for="abs-url">Audiobookshelf URL:</label>
-                    <input type="url" id="abs-url" name="audiobookshelf_url" required placeholder="https://your-audiobookshelf.com">
-                </div>
-
-                <div class="form-group">
-                    <label for="abs-token">Audiobookshelf Token:</label>
-                    <input type="password" id="abs-token" name="audiobookshelf_token" required placeholder="Your ABS API token">
-                    <button type="button" class="btn-toggle-password" onclick="togglePassword('abs-token')">👁️</button>
-                </div>
-
-                <div class="form-group">
-                    <label for="hc-token">Hardcover Token:</label>
-                    <input type="password" id="hc-token" name="hardcover_token" required placeholder="Your Hardcover API token">
-                    <button type="button" class="btn-toggle-password" onclick="togglePassword('hc-token')">👁️</button>
-                </div>
-
-                <div class="form-section">
-                    <h3>Sync Configuration</h3>
-                    
-                    <div class="form-group">
-                        <label for="conflict-resolution">Conflict Resolution Strategy:</label>
-                        <select id="conflict-resolution" name="conflict_resolution_mode">
-                            <option value="prefer_abs">Prefer AudiobookShelf Progress (default)</option>
-                            <option value="prefer_hardcover">Prefer Hardcover Progress</option>
-                            <option value="prefer_newest">Use Newest Progress</option>
-                            <option value="manual">Manual Review Required</option>
-                        </select>
-                        <small>How to resolve conflicts when progress differs between ABS and Hardcover</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="hc-refresh-interval">Hardcover Refresh Interval:</label>
-                        <select id="hc-refresh-interval" name="hc_refresh_interval">
-                            <option value="1h">Every Hour</option>
-                            <option value="6h">Every 6 Hours</option>
-                            <option value="12h">Every 12 Hours</option>
-                            <option value="24h">Every 24 Hours (default)</option>
-                            <option value="7d">Every 7 Days</option>
-                        </select>
-                        <small>How frequently to re-fetch books from Hardcover API</small>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="incremental" name="incremental" checked>
-                            Enable Incremental Sync
-                        </label>
-                        <small>Only sync books that have changed since last sync</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="sync-interval">Sync Interval:</label>
-                        <select id="sync-interval" name="sync_interval">
-                            <option value="1h">1 Hour</option>
-                            <option value="2h">2 Hours</option>
-                            <option value="6h">6 Hours</option>
-                            <option value="12h">12 Hours</option>
-                            <option value="24h">24 Hours</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="minimum-progress">Minimum Progress (0.0-1.0):</label>
-                        <input type="number" id="minimum-progress" name="minimum_progress" min="0" max="1" step="0.01" value="0.01">
-                        <small>Minimum progress threshold to sync a book</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="sync-want-to-read" name="sync_want_to_read" checked>
-                            Sync "Want to Read" books (0% progress)
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="process-unread-books" name="process_unread_books">
-                            Process unread books (0% progress)
-                        </label>
-                        <small>Also process books with 0% progress for mismatches and "want to read" status</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="sync-owned" name="sync_owned" checked>
-                            Mark synced books as owned in Hardcover
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="include-ebooks" name="include_ebooks">
-                            Include Ebooks
-                        </label>
-                        <small>Include items with media type "ebook" in sync (default: off)</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="include-libraries">Include Libraries (comma-separated):</label>
-                        <input type="text" id="include-libraries" name="include_libraries" placeholder="Audiobooks, Fiction">
-                        <small>Leave empty to include all libraries</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="exclude-libraries">Exclude Libraries (comma-separated):</label>
-                        <input type="text" id="exclude-libraries" name="exclude_libraries" placeholder="Podcasts, Magazines">
-                        <small>Libraries to exclude from sync</small>
-                    </div>
-                </div>
-
-                <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">Create User</button>
-                    <button type="reset" class="btn btn-secondary">Reset Form</button>
-                </div>
-            </form>
         </div>
     </div>
 

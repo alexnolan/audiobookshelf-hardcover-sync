@@ -2,13 +2,13 @@ package sync
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/api/hardcover"
 	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/database"
 	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/logger"
-	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/models"
 )
 
 // HCCollector handles collection of books from Hardcover with rate limiting
@@ -88,30 +88,45 @@ func (c *HCCollector) CollectAllUserBooks(ctx context.Context, profileID string,
 		return nil, err
 	}
 
-	// Get user books - placeholder for actual HC API call
-	var userBooks []*models.HardcoverBook
+	// Get all user books from Hardcover API
+	userBooks, err := c.hcClient.GetAllUserBooks(ctx)
+	if err != nil {
+		log.Error("Failed to fetch user books from Hardcover", map[string]interface{}{
+			"error": err.Error(),
+		})
+		return nil, fmt.Errorf("failed to fetch user books: %w", err)
+	}
 
 	total := len(userBooks)
+	log.Info("Fetched user books from Hardcover", map[string]interface{}{
+		"total": total,
+	})
+
 	for i, ub := range userBooks {
 		if progressCallback != nil {
 			progressCallback(i+1, total)
 		}
 
-		// Parse IDs from strings to int64
-		// In real implementation, these would come from HC API as integers
-		var hcUserBookID int64 = 0
-		var hcBookID int64 = 0
-		// TODO: parse ub.UserBookID and ub.ID when HC API is implemented
+		// Get author from book title (we'll need to fetch separately if needed)
+		author := "" // HC doesn't return author in this query
 
 		// Convert to database model
 		hcBook := database.HardcoverUserBook{
 			ProfileID:    profileID,
-			HCUserBookID: hcUserBookID,
-			HCBookID:     hcBookID,
-			Title:        ub.Title,
-			Author:       getHCAuthorString(ub),
-			Progress:     getHCProgress(ub),
+			HCUserBookID: int64(ub.ID),
+			HCBookID:     int64(ub.BookID),
+			Title:        ub.Book.Title,
+			Author:       author,
+			Progress:     ub.Progress,
 			UpdatedAt:    time.Now(),
+		}
+
+		// Store ASIN/ISBN for matching if available
+		if ub.Edition.ASIN != nil {
+			hcBook.ASIN = *ub.Edition.ASIN
+		}
+		if ub.Edition.ISBN13 != nil {
+			hcBook.ISBN13 = *ub.Edition.ISBN13
 		}
 
 		// Upsert book
@@ -145,18 +160,4 @@ func (c *HCCollector) ShouldRefreshUserBooks(profileID string, maxAge time.Durat
 	}
 
 	return time.Since(lastCollection) > maxAge
-}
-
-// Helper functions
-func getHCAuthorString(book *models.HardcoverBook) string {
-	if len(book.Authors) > 0 {
-		return book.Authors[0].Name
-	}
-	return ""
-}
-
-func getHCProgress(ub *models.HardcoverBook) float64 {
-	// Hardcover doesn't have progress field, default to 0
-	// This would need to be fetched from a separate endpoint
-	return 0
 }

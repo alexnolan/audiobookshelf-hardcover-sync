@@ -378,8 +378,11 @@ class SyncProfileApp {
         // Refresh data when switching to relevant tabs
         if (tabName === 'users') {
             this.loadProfiles();
-        } else if (tabName === 'sync') {
-            this.loadStatuses();
+        } else if (tabName === 'library') {
+            // Library tab - data loaded via loadLibraryBooks()
+        } else if (tabName === 'history') {
+            // History tab - populate profile dropdown and load logs
+            populateHistoryProfileDropdown();
         }
     }
 
@@ -2332,6 +2335,72 @@ function refreshStatus() {
     app.loadStatuses();
 }
 
+// Toggle the inline Add Profile form
+function toggleAddProfileForm() {
+    const section = document.getElementById('add-profile-section');
+    if (section.style.display === 'none') {
+        section.style.display = 'block';
+    } else {
+        section.style.display = 'none';
+    }
+}
+
+// Handle inline add user form submission
+async function handleAddUser(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    
+    const data = {
+        id: formData.get('id'),
+        name: formData.get('name'),
+        audiobookshelf_url: formData.get('audiobookshelf_url'),
+        audiobookshelf_token: formData.get('audiobookshelf_token'),
+        hardcover_token: formData.get('hardcover_token'),
+    };
+    
+    try {
+        const response = await fetch('/api/profiles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        
+        const result = await response.json();
+        if (response.ok && result.success) {
+            app.showToast('Profile created successfully!', 'success');
+            form.reset();
+            toggleAddProfileForm();
+            app.loadProfiles();
+        } else {
+            app.showToast(result.error || 'Failed to create profile', 'error');
+        }
+    } catch (error) {
+        console.error('Error creating profile:', error);
+        app.showToast('Failed to create profile', 'error');
+    }
+}
+
+// Populate the history tab profile dropdown
+function populateHistoryProfileDropdown() {
+    const profileSelect = document.getElementById('profile-select');
+    if (!profileSelect || !app.users) return;
+    
+    const currentValue = profileSelect.value;
+    profileSelect.innerHTML = '<option value="">Select a Profile...</option>';
+    app.users.forEach(user => {
+        const option = document.createElement('option');
+        option.value = user.id;
+        option.textContent = user.name || user.id;
+        profileSelect.appendChild(option);
+    });
+    
+    // Restore selection if it still exists
+    if (currentValue && app.users.some(u => u.id === currentValue)) {
+        profileSelect.value = currentValue;
+    }
+}
+
 function togglePassword(inputId) {
     const input = document.getElementById(inputId);
     const button = input.nextElementSibling;
@@ -2527,7 +2596,23 @@ let libraryState = {
     searchQuery: '',
     profileId: '',
     currentBookDetail: null,
+    searchTimeout: null,
 };
+
+// Debounced search function
+function debouncedSearch(value) {
+    // Clear any pending search
+    if (libraryState.searchTimeout) {
+        clearTimeout(libraryState.searchTimeout);
+    }
+    
+    // Set new timeout
+    libraryState.searchTimeout = setTimeout(() => {
+        libraryState.searchQuery = value;
+        libraryState.currentPage = 1;
+        loadLibraryBooks();
+    }, 300); // 300ms debounce
+}
 
 // Load library books with pagination and filtering
 async function loadLibraryBooks() {
@@ -2542,6 +2627,7 @@ async function loadLibraryBooks() {
             limit: libraryState.pageSize,
             filter: libraryState.filter,
             sort: libraryState.sort,
+            search: libraryState.searchQuery,
         });
 
         const response = await fetch(`/api/profiles/${libraryState.profileId}/books?${params}`);
@@ -2570,23 +2656,24 @@ function renderLibraryBooks(books, pagination) {
 
             <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
                 <input type="text" id="library-search" placeholder="Search by title or author..." 
-                    onkeyup="libraryState.searchQuery = this.value; libraryState.currentPage = 1; applyLibraryFilter()"
+                    oninput="debouncedSearch(this.value)"
+                    value="${escapeHtml(libraryState.searchQuery)}"
                     style="flex: 1; min-width: 200px; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
                 
                 <select id="library-filter" onchange="libraryState.filter = this.value; libraryState.currentPage = 1; loadLibraryBooks()"
                     style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
-                    <option value="">All Books</option>
-                    <option value="in_sync">In Sync</option>
-                    <option value="needs_sync">Needs Sync</option>
-                    <option value="unmapped">Unmapped</option>
-                    <option value="disabled">Disabled</option>
+                    <option value="" ${libraryState.filter === '' ? 'selected' : ''}>All Books</option>
+                    <option value="in_sync" ${libraryState.filter === 'in_sync' ? 'selected' : ''}>In Sync</option>
+                    <option value="needs_sync" ${libraryState.filter === 'needs_sync' ? 'selected' : ''}>Needs Sync</option>
+                    <option value="unmapped" ${libraryState.filter === 'unmapped' ? 'selected' : ''}>Unmapped</option>
+                    <option value="disabled" ${libraryState.filter === 'disabled' ? 'selected' : ''}>Disabled</option>
                 </select>
 
                 <select id="library-sort" onchange="libraryState.sort = this.value; loadLibraryBooks()"
                     style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
-                    <option value="title">Sort by Title</option>
-                    <option value="progress_diff">Sort by Diff %</option>
-                    <option value="last_updated">Sort by Last Updated</option>
+                    <option value="title" ${libraryState.sort === 'title' ? 'selected' : ''}>Sort by Title</option>
+                    <option value="progress_diff" ${libraryState.sort === 'progress_diff' ? 'selected' : ''}>Sort by Diff %</option>
+                    <option value="last_updated" ${libraryState.sort === 'last_updated' ? 'selected' : ''}>Sort by Last Updated</option>
                 </select>
 
                 <button class="btn btn-primary" onclick="syncAllBooks()">🔄 Sync All</button>

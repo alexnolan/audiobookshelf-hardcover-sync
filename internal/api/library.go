@@ -127,8 +127,15 @@ func (api *LibraryAPI) GetBooksHandler(w http.ResponseWriter, r *http.Request) {
 
 	offset := (page - 1) * limit
 
+	// Parse filter options
+	filterOpts := &database.BookFilterOptions{
+		Search: r.URL.Query().Get("search"),
+		Filter: r.URL.Query().Get("filter"),
+		Sort:   r.URL.Query().Get("sort"),
+	}
+
 	// Get comparisons
-	comparisons, total, err := api.repository.GetBookComparisons(profileID, limit, offset)
+	comparisons, total, err := api.repository.GetBookComparisons(profileID, limit, offset, filterOpts)
 	if err != nil {
 		log.Error("Failed to get book comparisons", map[string]interface{}{
 			"error": err.Error(),

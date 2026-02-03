@@ -1107,20 +1107,52 @@ func (r *Repository) GetBookComparison(profileID string, absBookID uint) (*BookC
 	return comparison, nil
 }
 
-// GetBookComparisons retrieves all comparisons for a profile with pagination
-func (r *Repository) GetBookComparisons(profileID string, limit int, offset int) ([]BookComparison, int64, error) {
+// BookFilterOptions defines filter, sort, and search options for book queries
+type BookFilterOptions struct {
+	Search string // Search query for title/author
+	Filter string // Filter: in_sync, needs_sync, unmapped, disabled
+	Sort   string // Sort: title, progress_diff, last_updated
+}
+
+// GetBookComparisons retrieves all comparisons for a profile with pagination and filtering
+func (r *Repository) GetBookComparisons(profileID string, limit int, offset int, opts *BookFilterOptions) ([]BookComparison, int64, error) {
 	var absBooks []ABSBook
 	var total int64
 
-	if err := r.db.GetDB().Model(&ABSBook{}).Where("profile_id = ?", profileID).Count(&total).Error; err != nil {
+	// Build base query
+	query := r.db.GetDB().Model(&ABSBook{}).Where("profile_id = ?", profileID)
+
+	// Apply search filter (title or author contains search term)
+	if opts != nil && opts.Search != "" {
+		searchPattern := "%" + opts.Search + "%"
+		query = query.Where("(title LIKE ? OR author LIKE ?)", searchPattern, searchPattern)
+	}
+
+	// Count total matching records
+	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
+	// Determine sort order
+	orderBy := "title ASC" // default
+	if opts != nil && opts.Sort != "" {
+		switch opts.Sort {
+		case "progress_diff":
+			orderBy = "progress DESC" // Will be recalculated, sort by abs progress for now
+		case "last_updated":
+			orderBy = "updated_at DESC"
+		default:
+			orderBy = "title ASC"
+		}
+	}
+
+	// Fetch books with pagination
 	if err := r.db.GetDB().
 		Where("profile_id = ?", profileID).
 		Preload("Mapping").
 		Preload("Config").
-		Order("title ASC").
+		Where(opts != nil && opts.Search != "", "(title LIKE ? OR author LIKE ?)", "%"+opts.Search+"%", "%"+opts.Search+"%").
+		Order(orderBy).
 		Limit(limit).
 		Offset(offset).
 		Find(&absBooks).Error; err != nil {
@@ -1157,6 +1189,28 @@ func (r *Repository) GetBookComparisons(profileID string, limit int, offset int)
 				comp.SyncStatus = "disabled"
 			} else {
 				comp.SyncStatus = "not_matched"
+			}
+		}
+
+		// Apply status filter if specified
+		if opts != nil && opts.Filter != "" {
+			switch opts.Filter {
+			case "in_sync":
+				if comp.SyncStatus != "in_sync" {
+					continue
+				}
+			case "needs_sync":
+				if comp.SyncStatus != "needs_sync" {
+					continue
+				}
+			case "unmapped":
+				if comp.SyncStatus != "not_matched" {
+					continue
+				}
+			case "disabled":
+				if comp.SyncStatus != "disabled" {
+					continue
+				}
 			}
 		}
 

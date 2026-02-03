@@ -86,4 +86,7 @@ type HardcoverClientInterface interface {
 
     // GetBookByID retrieves a book and basic related details by its Hardcover book ID
     GetBookByID(ctx context.Context, bookID string) (*models.HardcoverBook, error)
+
+	// GetAllUserBooks retrieves all user books for the authenticated user
+	GetAllUserBooks(ctx context.Context) ([]UserBookWithProgress, error)
 }
