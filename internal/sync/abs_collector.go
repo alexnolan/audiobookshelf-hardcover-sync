@@ -26,10 +26,10 @@ func NewABSCollector(absClient *audiobookshelf.Client, repository *database.Repo
 
 // CollectionStats holds statistics about a collection operation
 type CollectionStats struct {
-	CollectedCount int
-	UpdatedCount   int
-	ErrorCount     int
-	Duration       time.Duration
+	CollectedCount int           `json:"collected_count"`
+	UpdatedCount   int           `json:"updated_count"`
+	ErrorCount     int           `json:"error_count"`
+	Duration       time.Duration `json:"duration"`
 }
 
 // CollectAllBooks fetches all books from all ABS libraries

@@ -277,11 +277,14 @@ func (api *LibraryAPI) CollectABSBooksHandler(w http.ResponseWriter, r *http.Req
 	})
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(APIResponse{
-		Success: true,
-		Data: map[string]interface{}{
-			"status": "collection_completed",
-			"stats":  stats,
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":         true,
+		"data": map[string]interface{}{
+			"status":          "collection_completed",
+			"collected_count": stats.CollectedCount,
+			"updated_count":   stats.UpdatedCount,
+			"error_count":     stats.ErrorCount,
+			"duration":        stats.Duration.String(),
 		},
 	})
 }
@@ -352,11 +355,14 @@ func (api *LibraryAPI) CollectHCBooksHandler(w http.ResponseWriter, r *http.Requ
 	})
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(APIResponse{
-		Success: true,
-		Data: map[string]interface{}{
-			"status": "collection_completed",
-			"stats":  stats,
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":         true,
+		"data": map[string]interface{}{
+			"status":          "collection_completed",
+			"collected_count": stats.CollectedCount,
+			"updated_count":   stats.UpdatedCount,
+			"error_count":     stats.ErrorCount,
+			"duration":        stats.Duration.String(),
 		},
 	})
 }
