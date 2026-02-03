@@ -242,6 +242,7 @@ type HardcoverUserBook struct {
 	HCUserBookID    int64     `gorm:"index:idx_hc_user_book_id;uniqueIndex:idx_profile_hc_unique,priority:2;not null" json:"hc_user_book_id"`
 	HCBookID        int64     `gorm:"index:idx_hc_book_id" json:"hc_book_id"`
 	HCEditionID     *int64    `gorm:"index:idx_hc_edition_id" json:"hc_edition_id,omitempty"`
+	Slug            string    `json:"slug"`              // Book slug for URL (e.g., "green-wing")
 	Title           string    `json:"title"`
 	Author          string    `json:"author"`
 	ASIN            string    `gorm:"index:idx_hc_asin" json:"asin"`

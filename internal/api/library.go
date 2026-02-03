@@ -47,7 +47,10 @@ type FlatBookComparison struct {
 	ABSID             string  `json:"abs_id"`
 	ABSTitle          string  `json:"abs_title"`
 	ABSAuthor         string  `json:"abs_author"`
+	ABSNarrator       string  `json:"abs_narrator,omitempty"`
 	ABSProgress       float64 `json:"abs_progress"`
+	ABSASIN           string  `json:"abs_asin,omitempty"`
+	ABSISBN           string  `json:"abs_isbn,omitempty"`
 	HardcoverProgress float64 `json:"hardcover_progress"`
 	ProgressDiff      float64 `json:"progress_diff"`
 	InSync            bool    `json:"in_sync"`
@@ -55,6 +58,14 @@ type FlatBookComparison struct {
 	SyncEnabled       bool    `json:"sync_enabled"`
 	HCBookID          *int64  `json:"hc_book_id,omitempty"`
 	HCUserBookID      *int64  `json:"hc_user_book_id,omitempty"`
+	HCSlug            string  `json:"hc_slug,omitempty"`
+	HCEditionID       *int64  `json:"hc_edition_id,omitempty"`
+	HCTitle           string  `json:"hc_title,omitempty"`
+	HCAuthor          string  `json:"hc_author,omitempty"`
+	HCASIN            string  `json:"hc_asin,omitempty"`
+	HCISBN13          string  `json:"hc_isbn13,omitempty"`
+	HCISBN10          string  `json:"hc_isbn10,omitempty"`
+	HCStatusName      string  `json:"hc_status_name,omitempty"`
 	MatchMethod       string  `json:"match_method,omitempty"`
 	MatchConfidence   float64 `json:"match_confidence,omitempty"`
 }
@@ -65,7 +76,10 @@ func flattenComparison(comp database.BookComparison) FlatBookComparison {
 		ABSID:        comp.ABSBook.ABSID,
 		ABSTitle:     comp.ABSBook.Title,
 		ABSAuthor:    comp.ABSBook.Author,
+		ABSNarrator:  comp.ABSBook.Narrator,
 		ABSProgress:  comp.ABSBook.Progress,
+		ABSASIN:      comp.ABSBook.ASIN,
+		ABSISBN:      comp.ABSBook.ISBN,
 		ProgressDiff: comp.ProgressDiff,
 		InSync:       comp.InSync,
 		SyncStatus:   comp.SyncStatus,
@@ -79,6 +93,14 @@ func flattenComparison(comp database.BookComparison) FlatBookComparison {
 		flat.HCBookID = &hcBookID
 		hcUserBookID := comp.HardcoverBook.HCUserBookID
 		flat.HCUserBookID = &hcUserBookID
+		flat.HCSlug = comp.HardcoverBook.Slug
+		flat.HCEditionID = comp.HardcoverBook.HCEditionID
+		flat.HCTitle = comp.HardcoverBook.Title
+		flat.HCAuthor = comp.HardcoverBook.Author
+		flat.HCASIN = comp.HardcoverBook.ASIN
+		flat.HCISBN13 = comp.HardcoverBook.ISBN13
+		flat.HCISBN10 = comp.HardcoverBook.ISBN10
+		flat.HCStatusName = comp.HardcoverBook.StatusName
 	}
 
 	// Check sync config
@@ -156,12 +178,19 @@ func (api *LibraryAPI) GetBooksHandler(w http.ResponseWriter, r *http.Request) {
 		flatBooks[i] = flattenComparison(comp)
 	}
 
+	// Get ABS URL for the profile
+	absURL := ""
+	if profile, err := api.repository.GetProfile(profileID); err == nil && profile != nil {
+		absURL = profile.AudiobookshelfURL
+	}
+
 	w.WriteHeader(http.StatusOK)
 	// Return response matching frontend expectations:
 	// data = books array, pagination at top level
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"data":    flatBooks,
+		"abs_url": absURL,
 		"pagination": PaginationInfo{
 			Page:       page,
 			Limit:      limit,
@@ -420,14 +449,31 @@ func (api *LibraryAPI) CollectHCBooksHandler(w http.ResponseWriter, r *http.Requ
 		"stats":      stats,
 	})
 
+	// Run auto-match after HC collection to link new books
+	matchedCount := 0
+	absCollector, err := api.collectorFactory.CreateABSCollector(profileID)
+	if err == nil {
+		if err := absCollector.AutoMatchBooks(ctx, profileID); err != nil {
+			log.Warn("Auto-match after HC collection failed", map[string]interface{}{
+				"profile_id": profileID,
+				"error":      err.Error(),
+			})
+		} else {
+			log.Info("Auto-match after HC collection completed", map[string]interface{}{
+				"profile_id": profileID,
+			})
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":         true,
+		"success": true,
 		"data": map[string]interface{}{
 			"status":          "collection_completed",
 			"collected_count": stats.CollectedCount,
 			"updated_count":   stats.UpdatedCount,
 			"error_count":     stats.ErrorCount,
+			"matched_count":   matchedCount,
 			"duration":        stats.Duration.String(),
 		},
 	})
@@ -533,6 +579,78 @@ func (api *LibraryAPI) GetSyncSummaryHandler(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// AutoMatchBooksHandler triggers auto-matching of ABS books to Hardcover
+func (api *LibraryAPI) AutoMatchBooksHandler(w http.ResponseWriter, r *http.Request) {
+	log := logger.Get()
+	w.Header().Set("Content-Type", "application/json")
+
+	profileID := r.PathValue("id")
+	if profileID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Profile ID required",
+		})
+		return
+	}
+
+	log.Info("Auto-match requested", map[string]interface{}{
+		"profile_id": profileID,
+	})
+
+	// Check if collector factory is available
+	if api.collectorFactory == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Collector service not configured",
+		})
+		return
+	}
+
+	// Create ABS collector for auto-match
+	collector, err := api.collectorFactory.CreateABSCollector(profileID)
+	if err != nil {
+		log.Error("Failed to create collector for auto-match", map[string]interface{}{
+			"profile_id": profileID,
+			"error":      err.Error(),
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to create collector: " + err.Error(),
+		})
+		return
+	}
+
+	// Run auto-match
+	ctx := r.Context()
+	if err := collector.AutoMatchBooks(ctx, profileID); err != nil {
+		log.Error("Auto-match failed", map[string]interface{}{
+			"profile_id": profileID,
+			"error":      err.Error(),
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Auto-match failed: " + err.Error(),
+		})
+		return
+	}
+
+	log.Info("Auto-match completed", map[string]interface{}{
+		"profile_id": profileID,
+	})
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"data": map[string]interface{}{
+			"status": "auto_match_completed",
+		},
+	})
+}
+
 // CreateBookMappingHandler creates a manual book mapping
 func (api *LibraryAPI) CreateBookMappingHandler(w http.ResponseWriter, r *http.Request) {
 	log := logger.Get()
@@ -591,6 +709,170 @@ func (api *LibraryAPI) DeleteBookMappingHandler(w http.ResponseWriter, r *http.R
 		Success: true,
 		Data: map[string]interface{}{
 			"status": "mapping_deleted",
+		},
+	})
+}
+
+// GetEditionsHandler retrieves all editions for a Hardcover book
+func (api *LibraryAPI) GetEditionsHandler(w http.ResponseWriter, r *http.Request) {
+	log := logger.Get()
+	w.Header().Set("Content-Type", "application/json")
+
+	profileID := r.PathValue("id")
+	bookIDStr := r.URL.Query().Get("book_id")
+
+	if profileID == "" || bookIDStr == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Profile ID and book_id required",
+		})
+		return
+	}
+
+	bookID, err := strconv.Atoi(bookIDStr)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Invalid book_id",
+		})
+		return
+	}
+
+	// Get the HC collector to access the Hardcover client
+	hcCollector, err := api.collectorFactory.CreateHCCollector(profileID)
+	if err != nil {
+		log.Error("Failed to create HC collector", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to initialize Hardcover client",
+		})
+		return
+	}
+
+	// Fetch editions from Hardcover API
+	editions, err := hcCollector.GetBookEditions(r.Context(), bookID)
+	if err != nil {
+		log.Error("Failed to fetch editions", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to fetch editions from Hardcover",
+		})
+		return
+	}
+
+	log.Info("Retrieved editions for book", map[string]interface{}{
+		"book_id":       bookID,
+		"edition_count": len(editions),
+	})
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data:    editions,
+	})
+}
+
+// UpdateEditionRequest represents a request to update the edition mapping
+type UpdateEditionRequest struct {
+	EditionID int64 `json:"edition_id"`
+}
+
+// UpdateEditionHandler updates the edition for a book mapping
+func (api *LibraryAPI) UpdateEditionHandler(w http.ResponseWriter, r *http.Request) {
+	log := logger.Get()
+	w.Header().Set("Content-Type", "application/json")
+
+	profileID := r.PathValue("id")
+	absBookIDStr := r.PathValue("absBookId")
+
+	if profileID == "" || absBookIDStr == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Profile ID and Book ID required",
+		})
+		return
+	}
+
+	absBookID, err := strconv.ParseUint(absBookIDStr, 10, 32)
+	if err != nil {
+		// Try looking up by ABS ID string
+		absBook, lookupErr := api.repository.GetABSBook(profileID, absBookIDStr)
+		if lookupErr != nil || absBook == nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(APIResponse{
+				Success: false,
+				Error:   "Invalid book ID",
+			})
+			return
+		}
+		absBookID = uint64(absBook.ID)
+	}
+
+	var req UpdateEditionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Invalid request body",
+		})
+		return
+	}
+
+	// Get the existing mapping
+	mapping, err := api.repository.GetBookMapping(profileID, uint(absBookID))
+	if err != nil || mapping == nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Book mapping not found",
+		})
+		return
+	}
+
+	// Update the edition ID in the mapping
+	mapping.HCEditionID = &req.EditionID
+	mapping.MatchMethod = database.MatchMethodManual
+	mapping.MatchConfidence = 1.0
+	mapping.ManualOverride = true
+
+	if err := api.repository.UpsertBookMapping(*mapping); err != nil {
+		log.Error("Failed to update mapping", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to update mapping",
+		})
+		return
+	}
+
+	// Also update the HardcoverUserBook record if it exists
+	if mapping.HCUserBookID != nil {
+		hcBook, err := api.repository.GetHardcoverUserBookByID(profileID, *mapping.HCUserBookID)
+		if err == nil && hcBook != nil {
+			hcBook.HCEditionID = &req.EditionID
+			if err := api.repository.UpsertHardcoverUserBook(*hcBook); err != nil {
+				log.Warn("Failed to update HC book edition", map[string]interface{}{"error": err.Error()})
+			}
+		}
+	}
+
+	log.Info("Updated edition mapping", map[string]interface{}{
+		"profile_id":  profileID,
+		"abs_book_id": absBookID,
+		"edition_id":  req.EditionID,
+	})
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"status":     "edition_updated",
+			"edition_id": req.EditionID,
 		},
 	})
 }

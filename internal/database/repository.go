@@ -675,7 +675,7 @@ func (r *Repository) UpsertHardcoverUserBook(book HardcoverUserBook) error {
 
 	clause := clause.OnConflict{
 		Columns:   []clause.Column{{Name: "profile_id"}, {Name: "hc_user_book_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"hc_book_id", "hc_edition_id", "title", "author", "asin", "isbn_13", "isbn_10", "status", "status_name", "progress", "progress_seconds", "rating", "started_at", "finished_at", "last_fetched_at", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"hc_book_id", "hc_edition_id", "slug", "title", "author", "asin", "isbn13", "isbn10", "status", "status_name", "progress", "progress_seconds", "rating", "started_at", "finished_at", "last_fetched_at", "updated_at"}),
 	}
 	return r.db.GetDB().Clauses(clause).Create(&book).Error
 }
@@ -694,7 +694,7 @@ func (r *Repository) UpsertHardcoverUserBooks(books []HardcoverUserBook) error {
 
 	clause := clause.OnConflict{
 		Columns:   []clause.Column{{Name: "profile_id"}, {Name: "hc_user_book_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"hc_book_id", "hc_edition_id", "title", "author", "asin", "isbn_13", "isbn_10", "status", "status_name", "progress", "progress_seconds", "rating", "started_at", "finished_at", "last_fetched_at", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"hc_book_id", "hc_edition_id", "slug", "title", "author", "asin", "isbn13", "isbn10", "status", "status_name", "progress", "progress_seconds", "rating", "started_at", "finished_at", "last_fetched_at", "updated_at"}),
 	}
 	return r.db.GetDB().Clauses(clause).CreateInBatches(books, 100).Error
 }
@@ -752,7 +752,35 @@ func (r *Repository) GetHardcoverUserBookByASIN(profileID, asin string) (*Hardco
 func (r *Repository) GetHardcoverUserBookByISBN(profileID, isbn string) (*HardcoverUserBook, error) {
 	var book HardcoverUserBook
 	if err := r.db.GetDB().
-		Where("profile_id = ? AND (isbn_13 = ? OR isbn_10 = ?)", profileID, isbn, isbn).
+		Where("profile_id = ? AND (isbn13 = ? OR isbn10 = ?)", profileID, isbn, isbn).
+		First(&book).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &book, nil
+}
+
+// GetHardcoverUserBookByTitle retrieves a Hardcover user book by exact title match
+func (r *Repository) GetHardcoverUserBookByTitle(profileID, title string) (*HardcoverUserBook, error) {
+	var book HardcoverUserBook
+	if err := r.db.GetDB().
+		Where("profile_id = ? AND LOWER(title) = LOWER(?)", profileID, title).
+		First(&book).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &book, nil
+}
+
+// GetHardcoverUserBookByID retrieves a Hardcover user book by HCUserBookID
+func (r *Repository) GetHardcoverUserBookByID(profileID string, hcUserBookID int64) (*HardcoverUserBook, error) {
+	var book HardcoverUserBook
+	if err := r.db.GetDB().
+		Where("profile_id = ? AND hc_user_book_id = ?", profileID, hcUserBookID).
 		First(&book).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -827,7 +855,7 @@ func (r *Repository) GetUnmappedBooks(profileID string, limit int, offset int) (
 	var total int64
 
 	// Books with no mapping
-	db := r.db.GetDB().
+	db := r.db.GetDB().Model(&ABSBook{}).
 		Where("profile_id = ?", profileID).
 		Where("id NOT IN (SELECT DISTINCT abs_book_id FROM book_mappings WHERE profile_id = ? AND hc_user_book_id IS NOT NULL)", profileID)
 
@@ -1117,21 +1145,6 @@ type BookFilterOptions struct {
 // GetBookComparisons retrieves all comparisons for a profile with pagination and filtering
 func (r *Repository) GetBookComparisons(profileID string, limit int, offset int, opts *BookFilterOptions) ([]BookComparison, int64, error) {
 	var absBooks []ABSBook
-	var total int64
-
-	// Build base query
-	query := r.db.GetDB().Model(&ABSBook{}).Where("profile_id = ?", profileID)
-
-	// Apply search filter (title or author contains search term)
-	if opts != nil && opts.Search != "" {
-		searchPattern := "%" + opts.Search + "%"
-		query = query.Where("(title LIKE ? OR author LIKE ?)", searchPattern, searchPattern)
-	}
-
-	// Count total matching records
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
 
 	// Determine sort order
 	orderBy := "title ASC" // default
@@ -1146,20 +1159,26 @@ func (r *Repository) GetBookComparisons(profileID string, limit int, offset int,
 		}
 	}
 
-	// Fetch books with pagination
-	if err := r.db.GetDB().
+	// Build query - fetch ALL books first (filtering happens after sync status computation)
+	bookQuery := r.db.GetDB().Model(&ABSBook{}).
 		Where("profile_id = ?", profileID).
 		Preload("Mapping").
-		Preload("Config").
-		Where(opts != nil && opts.Search != "", "(title LIKE ? OR author LIKE ?)", "%"+opts.Search+"%", "%"+opts.Search+"%").
+		Preload("Config")
+
+	// Apply search filter if provided
+	if opts != nil && opts.Search != "" {
+		searchPattern := "%" + opts.Search + "%"
+		bookQuery = bookQuery.Where("(title LIKE ? OR author LIKE ?)", searchPattern, searchPattern)
+	}
+
+	if err := bookQuery.
 		Order(orderBy).
-		Limit(limit).
-		Offset(offset).
 		Find(&absBooks).Error; err != nil {
 		return nil, 0, err
 	}
 
-	comparisons := make([]BookComparison, 0, len(absBooks))
+	// Build comparisons and apply status filter
+	allComparisons := make([]BookComparison, 0, len(absBooks))
 	for _, absBook := range absBooks {
 		comp := BookComparison{
 			ABSBook: absBook,
@@ -1214,10 +1233,23 @@ func (r *Repository) GetBookComparisons(profileID string, limit int, offset int,
 			}
 		}
 
-		comparisons = append(comparisons, comp)
+		allComparisons = append(allComparisons, comp)
 	}
 
-	return comparisons, total, nil
+	// Get total count after filtering
+	total := int64(len(allComparisons))
+
+	// Apply pagination
+	start := offset
+	if start > len(allComparisons) {
+		start = len(allComparisons)
+	}
+	end := start + limit
+	if end > len(allComparisons) {
+		end = len(allComparisons)
+	}
+
+	return allComparisons[start:end], total, nil
 }
 
 // GetSyncSummary retrieves aggregated sync statistics for a profile

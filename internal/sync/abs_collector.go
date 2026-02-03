@@ -210,6 +210,7 @@ func (c *ABSCollector) AutoMatchBooks(ctx context.Context, profileID string) err
 		return err
 	}
 
+	matchedCount := 0
 	for _, book := range unmapped {
 		// Try ASIN match first (99% confidence)
 		if book.ASIN != "" {
@@ -227,6 +228,8 @@ func (c *ABSCollector) AutoMatchBooks(ctx context.Context, profileID string) err
 					log.Warn("Failed to create ASIN mapping", map[string]interface{}{
 						"error": err.Error(),
 					})
+				} else {
+					matchedCount++
 				}
 				continue
 			}
@@ -248,10 +251,41 @@ func (c *ABSCollector) AutoMatchBooks(ctx context.Context, profileID string) err
 					log.Warn("Failed to create ISBN mapping", map[string]interface{}{
 						"error": err.Error(),
 					})
+				} else {
+					matchedCount++
+				}
+				continue
+			}
+		}
+
+		// Try title match (80% confidence - exact match only)
+		if book.Title != "" {
+			hcBook, err := c.repository.GetHardcoverUserBookByTitle(profileID, book.Title)
+			if err == nil && hcBook != nil {
+				hcUserBookID := int64(hcBook.HCUserBookID)
+				mapping := database.BookMapping{
+					ProfileID:       profileID,
+					ABSBookID:       book.ID,
+					HCUserBookID:    &hcUserBookID,
+					MatchMethod:     database.MatchMethodTitleAuthor,
+					MatchConfidence: 0.80,
+				}
+				if err := c.repository.UpsertBookMapping(mapping); err != nil {
+					log.Warn("Failed to create title mapping", map[string]interface{}{
+						"error": err.Error(),
+					})
+				} else {
+					matchedCount++
 				}
 			}
 		}
 	}
+
+	log.Info("Auto-matching completed", map[string]interface{}{
+		"profile_id":    profileID,
+		"unmapped":      len(unmapped),
+		"matched_count": matchedCount,
+	})
 
 	return nil
 }
