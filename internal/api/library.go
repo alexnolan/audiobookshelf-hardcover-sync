@@ -7,17 +7,27 @@ import (
 
 	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/database"
 	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/logger"
+	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/sync"
 )
+
+// CollectorFactory interface for creating collectors
+type CollectorFactory interface {
+	CreateABSCollector(profileID string) (*sync.ABSCollector, error)
+	CreateHCCollector(profileID string) (*sync.HCCollector, error)
+	GetRepository() *database.Repository
+}
 
 // LibraryAPI handles book library REST endpoints
 type LibraryAPI struct {
-	repository *database.Repository
+	repository       *database.Repository
+	collectorFactory CollectorFactory
 }
 
 // NewLibraryAPI creates a new library API handler
-func NewLibraryAPI(repository *database.Repository) *LibraryAPI {
+func NewLibraryAPI(repository *database.Repository, collectorFactory CollectorFactory) *LibraryAPI {
 	return &LibraryAPI{
-		repository: repository,
+		repository:       repository,
+		collectorFactory: collectorFactory,
 	}
 }
 
@@ -220,12 +230,58 @@ func (api *LibraryAPI) CollectABSBooksHandler(w http.ResponseWriter, r *http.Req
 		"profile_id": profileID,
 	})
 
+	// Check if collector factory is available
+	if api.collectorFactory == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Collection service not configured",
+		})
+		return
+	}
+
+	// Create collector for this profile
+	collector, err := api.collectorFactory.CreateABSCollector(profileID)
+	if err != nil {
+		log.Error("Failed to create ABS collector", map[string]interface{}{
+			"profile_id": profileID,
+			"error":      err.Error(),
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to create collector: " + err.Error(),
+		})
+		return
+	}
+
+	// Run collection
+	ctx := r.Context()
+	stats, err := collector.CollectAllBooks(ctx, profileID, nil)
+	if err != nil {
+		log.Error("ABS collection failed", map[string]interface{}{
+			"profile_id": profileID,
+			"error":      err.Error(),
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Collection failed: " + err.Error(),
+		})
+		return
+	}
+
+	log.Info("ABS collection completed", map[string]interface{}{
+		"profile_id": profileID,
+		"stats":      stats,
+	})
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(APIResponse{
 		Success: true,
 		Data: map[string]interface{}{
-			"status":            "collection_initiated",
-			"collected_count": 0,
+			"status": "collection_completed",
+			"stats":  stats,
 		},
 	})
 }
@@ -249,12 +305,58 @@ func (api *LibraryAPI) CollectHCBooksHandler(w http.ResponseWriter, r *http.Requ
 		"profile_id": profileID,
 	})
 
+	// Check if collector factory is available
+	if api.collectorFactory == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Collection service not configured",
+		})
+		return
+	}
+
+	// Create collector for this profile
+	collector, err := api.collectorFactory.CreateHCCollector(profileID)
+	if err != nil {
+		log.Error("Failed to create HC collector", map[string]interface{}{
+			"profile_id": profileID,
+			"error":      err.Error(),
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to create collector: " + err.Error(),
+		})
+		return
+	}
+
+	// Run collection
+	ctx := r.Context()
+	stats, err := collector.CollectAllUserBooks(ctx, profileID, nil)
+	if err != nil {
+		log.Error("HC collection failed", map[string]interface{}{
+			"profile_id": profileID,
+			"error":      err.Error(),
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Collection failed: " + err.Error(),
+		})
+		return
+	}
+
+	log.Info("HC collection completed", map[string]interface{}{
+		"profile_id": profileID,
+		"stats":      stats,
+	})
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(APIResponse{
 		Success: true,
 		Data: map[string]interface{}{
-			"status":           "collection_initiated",
-			"collected_count": 0,
+			"status": "collection_completed",
+			"stats":  stats,
 		},
 	})
 }
