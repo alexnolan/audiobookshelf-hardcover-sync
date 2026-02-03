@@ -3127,9 +3127,12 @@ async function onLibraryProfileChange(profileId) {
     libraryState.collection = '';
     libraryState.absLibraries = [];
     libraryState.absCollections = [];
+    libraryState.profileSettings = null;
     
     if (profileId) {
-        // Load ABS libraries and collections for this profile
+        // First load profile settings for filtering
+        await loadProfileSettings(profileId);
+        // Then load ABS libraries and collections with filtering applied
         await Promise.all([
             loadABSLibraries(profileId),
             loadABSCollections(profileId)
@@ -3139,7 +3142,29 @@ async function onLibraryProfileChange(profileId) {
     loadLibraryBooks();
 }
 
-// Load ABS libraries for dropdown
+// Load profile settings for filtering dropdowns
+async function loadProfileSettings(profileId) {
+    if (!profileId) return;
+    
+    try {
+        const response = await fetch(`/api/profiles/${profileId}`);
+        const data = await response.json();
+        if (data.success && data.data) {
+            const config = data.data.sync_config || {};
+            libraryState.profileSettings = {
+                libraryFilterMode: config.library_filter_mode || '',
+                filteredLibraries: config.filtered_libraries || [],
+                includeCollections: config.include_collections || [],
+                excludeCollections: config.exclude_collections || []
+            };
+        }
+    } catch (error) {
+        console.error('Failed to load profile settings:', error);
+        libraryState.profileSettings = null;
+    }
+}
+
+// Load ABS libraries for dropdown (filtered by profile settings)
 async function loadABSLibraries(profileId) {
     if (!profileId) return;
     
@@ -3148,8 +3173,22 @@ async function loadABSLibraries(profileId) {
         const data = await response.json();
         if (data.success && data.data) {
             // Handle both { data: [...] } and { data: { libraries: [...] } } formats
-            const libraries = Array.isArray(data.data) ? data.data : (data.data.libraries || []);
-            libraryState.absLibraries = Array.isArray(libraries) ? libraries : [];
+            let libraries = Array.isArray(data.data) ? data.data : (data.data.libraries || []);
+            libraries = Array.isArray(libraries) ? libraries : [];
+            
+            // Filter libraries based on profile settings
+            const settings = libraryState.profileSettings;
+            if (settings && settings.filteredLibraries && settings.filteredLibraries.length > 0) {
+                if (settings.libraryFilterMode === 'include') {
+                    // Only show libraries that are included
+                    libraries = libraries.filter(lib => settings.filteredLibraries.includes(lib.name));
+                } else if (settings.libraryFilterMode === 'exclude') {
+                    // Show all libraries except excluded ones
+                    libraries = libraries.filter(lib => !settings.filteredLibraries.includes(lib.name));
+                }
+            }
+            
+            libraryState.absLibraries = libraries;
         } else {
             libraryState.absLibraries = [];
         }
@@ -3159,7 +3198,7 @@ async function loadABSLibraries(profileId) {
     }
 }
 
-// Load ABS collections for dropdown
+// Load ABS collections for dropdown (filtered by profile settings)
 async function loadABSCollections(profileId) {
     if (!profileId) return;
     
@@ -3168,8 +3207,23 @@ async function loadABSCollections(profileId) {
         const data = await response.json();
         if (data.success && data.data) {
             // Handle both { data: [...] } and { data: { collections: [...] } } formats
-            const collections = Array.isArray(data.data) ? data.data : (data.data.collections || []);
-            libraryState.absCollections = Array.isArray(collections) ? collections : [];
+            let collections = Array.isArray(data.data) ? data.data : (data.data.collections || []);
+            collections = Array.isArray(collections) ? collections : [];
+            
+            // Filter collections based on profile settings
+            const settings = libraryState.profileSettings;
+            if (settings) {
+                // If includeCollections is set, only show those collections
+                if (settings.includeCollections && settings.includeCollections.length > 0) {
+                    collections = collections.filter(col => settings.includeCollections.includes(col.id));
+                }
+                // If excludeCollections is set, hide those collections
+                else if (settings.excludeCollections && settings.excludeCollections.length > 0) {
+                    collections = collections.filter(col => !settings.excludeCollections.includes(col.id));
+                }
+            }
+            
+            libraryState.absCollections = collections;
         } else {
             libraryState.absCollections = [];
         }
@@ -3476,10 +3530,9 @@ function renderLibraryBooks(books, pagination) {
                 </div>
 
                 <div class="library-controls-row buttons-row">
-                    <button class="btn btn-primary" onclick="syncAllBooks()">🔄 Sync All</button>
                     <button class="btn btn-primary" onclick="collectABSBooks()">📥 Collect ABS</button>
                     <button class="btn btn-primary" onclick="collectHardcoverBooks()">📥 Collect HC</button>
-                    <button class="btn btn-primary" onclick="autoMatchBooks()">🔗 Auto-Match</button>
+                    <button class="btn btn-secondary" onclick="autoMatchBooks()">🔗 Auto-Match</button>
                 </div>
             </div>
 
@@ -4323,38 +4376,11 @@ function closeAddToHardcover() {
     addToHardcoverState = { absBookId: null, absTitle: null, searchResults: [], selectedBook: null, editions: [] };
 }
 
-// Sync all books
-async function syncAllBooks() {
-    if (!libraryState.profileId) return;
-
-    if (!confirm('Sync all books? This may take a while.')) return;
-
-    try {
-        app.showToast('Starting batch sync...', 'info');
-        const response = await fetch(`/api/profiles/${libraryState.profileId}/books/sync-batch`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ dry_run: false })
-        });
-
-        const data = await response.json();
-        if (data.success) {
-            app.showToast(`Synced ${data.data.synced_count} books!`, 'success');
-            loadLibraryBooks();
-        } else {
-            app.showToast(data.error || 'Batch sync failed', 'error');
-        }
-    } catch (error) {
-        console.error('Batch sync error:', error);
-        app.showToast('Batch sync failed', 'error');
-    }
-}
-
 // Collect from ABS
 async function collectABSBooks() {
     if (!libraryState.profileId) return;
 
-    if (!confirm('Collect books from AudiobookShelf? This may take a while.')) return;
+    if (!confirm('Collect books from AudiobookShelf?')) return;
 
     try {
         app.showToast('Collecting from ABS...', 'info');
@@ -4379,7 +4405,7 @@ async function collectABSBooks() {
 async function collectHardcoverBooks() {
     if (!libraryState.profileId) return;
 
-    if (!confirm('Collect books from Hardcover? This may take a while.')) return;
+    if (!confirm('Collect books from Hardcover?')) return;
 
     try {
         app.showToast('Collecting from Hardcover...', 'info');
