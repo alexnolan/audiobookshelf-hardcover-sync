@@ -493,7 +493,8 @@ class SyncProfileApp {
             if (response.ok && data.success) {
                 this.users = data.data;
                 this.renderProfiles();
-                updateProfileSelectForBookLogs(); // Update the profile select dropdown
+                updateProfileSelectForBookLogs(); // Update the history profile dropdown
+                updateLibraryProfileSelect(); // Update the library profile dropdown
             } else {
                 // Handle different types of errors
                 if (data.error && data.error.code === 'authentication_required') {
@@ -2405,9 +2406,12 @@ function populateHistoryProfileDropdown() {
         profileSelect.appendChild(option);
     });
     
-    // Restore selection if it still exists
+    // Restore selection if it still exists, or auto-select if only one profile
     if (currentValue && app.users.some(u => u.id === currentValue)) {
         profileSelect.value = currentValue;
+    } else if (app.users.length === 1) {
+        profileSelect.value = app.users[0].id;
+        loadBookSyncLogs();
     }
 }
 
@@ -2467,7 +2471,7 @@ function displayBookSyncLogs(logs) {
     const container = document.getElementById('book-logs-container');
     
     if (!logs || logs.length === 0) {
-        container.innerHTML = '<p style="padding: 2rem; text-align: center; color: #999;">No book sync logs found</p>';
+        container.innerHTML = '<p style="padding: 2rem; text-align: center; color: #999;">No sync history found. Run a sync to see results here.</p>';
         return;
     }
     
@@ -2493,18 +2497,20 @@ function displayBookSyncLogs(logs) {
     <tbody>`;
     
     logs.forEach(log => {
-        const statusColor = statusColorMap[log.Status] || '#999';
-        const progress = log.Progress ? (log.Progress * 100).toFixed(1) + '%' : '-';
-        const lastAttempt = log.LastAttempt ? new Date(log.LastAttempt).toLocaleString() : 'Never';
-        const errorMsg = log.ErrorMessage || '-';
+        // Use lowercase JSON field names from Go model
+        const status = log.status || 'UNKNOWN';
+        const statusColor = statusColorMap[status] || '#999';
+        const progress = log.progress ? (log.progress * 100).toFixed(1) + '%' : '-';
+        const lastAttempt = log.last_attempt ? new Date(log.last_attempt).toLocaleString() : 'Never';
+        const errorMsg = log.error_message || '-';
         const errorDisplay = errorMsg.length > 50 ? errorMsg.substring(0, 47) + '...' : errorMsg;
         
-        html += `<tr style="border-bottom: 1px solid #eee; hover-background: #f9f9f9;">
-            <td style="padding: 12px;">${escapeHtml(log.Title)}</td>
-            <td style="padding: 12px;">${escapeHtml(log.Author)}</td>
+        html += `<tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 12px;">${escapeHtml(log.title || '')}</td>
+            <td style="padding: 12px;">${escapeHtml(log.author || '')}</td>
             <td style="padding: 12px; text-align: center;">
                 <span style="background-color: ${statusColor}; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85em;">
-                    ${log.Status}
+                    ${status}
                 </span>
             </td>
             <td style="padding: 12px; text-align: right;">${progress}</td>
@@ -2527,14 +2533,50 @@ function escapeHtml(text) {
 // Update profile select when users are loaded
 function updateProfileSelectForBookLogs() {
     const select = document.getElementById('profile-select');
+    if (!select) return;
+    
     const users = app.users || [];
     
     let html = '<option value="">Select a Profile...</option>';
     users.forEach(user => {
-        html += `<option value="${user.id}">${user.name}</option>`;
+        html += `<option value="${user.id}">${user.name || user.id}</option>`;
     });
     
     select.innerHTML = html;
+    
+    // Auto-select if only one profile
+    if (users.length === 1) {
+        select.value = users[0].id;
+        loadBookSyncLogs();
+    }
+}
+
+// Update library profile selector and auto-select single profile
+function updateLibraryProfileSelect() {
+    const select = document.getElementById('library-profile-select');
+    if (!select) return;
+    
+    const users = app.users || [];
+    
+    // Preserve current selection
+    const currentValue = select.value;
+    
+    select.innerHTML = '<option value="">Select a Profile...</option>';
+    users.forEach(user => {
+        const option = document.createElement('option');
+        option.value = user.id;
+        option.text = user.name || user.id;
+        select.appendChild(option);
+    });
+    
+    // Restore selection or auto-select if only one profile
+    if (currentValue && users.some(u => u.id === currentValue)) {
+        select.value = currentValue;
+    } else if (users.length === 1) {
+        select.value = users[0].id;
+        libraryState.profileId = users[0].id;
+        loadLibraryBooks();
+    }
 }
 
 // Initialize the app when the page loads
@@ -3125,19 +3167,7 @@ function escapeHtml(text) {
 
 // Load profiles into profile selector when library tab is shown
 function loadLibraryProfiles() {
-    if (app && app.users && app.users.length > 0) {
-        const select = document.getElementById('library-profile-select');
-        if (select) {
-            app.users.forEach(user => {
-                if (!Array.from(select.options).find(opt => opt.value === user.id)) {
-                    const option = document.createElement('option');
-                    option.value = user.id;
-                    option.text = user.name || user.id;
-                    select.appendChild(option);
-                }
-            });
-        }
-    }
+    updateLibraryProfileSelect();
 }
 
 // Switch to Library tab for a specific profile
