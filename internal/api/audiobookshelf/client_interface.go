@@ -11,6 +11,7 @@ import (
 // This allows for mocking in tests
 type AudiobookshelfClientInterface interface {
 	GetLibraries(ctx context.Context) ([]AudiobookshelfLibrary, error)
+	GetCollections(ctx context.Context) ([]AudiobookshelfCollection, error)
 	GetLibraryItems(ctx context.Context, libraryID string) ([]models.AudiobookshelfBook, error)
 	GetUserProgress(ctx context.Context) (*models.AudiobookshelfUserProgress, error)
 	GetListeningSessions(ctx context.Context, since time.Time) ([]models.AudiobookshelfBook, error)

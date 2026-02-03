@@ -45,10 +45,13 @@ type AudiobookshelfBook struct {
 	Path      string `json:"path"`
 	MediaType string `json:"mediaType"`
 	Media     struct {
-		ID       string                      `json:"id"`
-		Metadata AudiobookshelfMetadataStruct `json:"metadata"`
-		CoverPath string                     `json:"coverPath"`
-		Duration  float64                    `json:"duration"`
+		ID            string                       `json:"id"`
+		Metadata      AudiobookshelfMetadataStruct `json:"metadata"`
+		CoverPath     string                       `json:"coverPath"`
+		Duration      float64                      `json:"duration"`
+		EbookFormat   string                       `json:"ebookFormat"`   // Non-empty for ebooks (e.g., "epub", "pdf", "azw3")
+		NumAudioFiles int                          `json:"numAudioFiles"` // Number of audio files (0 for ebooks)
+		NumTracks     int                          `json:"numTracks"`     // Number of tracks (0 for ebooks)
 	} `json:"media"`
 	// Progress tracks the user's progress through the book
 	Progress struct {
@@ -57,6 +60,20 @@ type AudiobookshelfBook struct {
 		StartedAt   int64   `json:"startedAt"`
 		FinishedAt  int64   `json:"finishedAt"`
 	} `json:"progress,omitempty"`
+}
+
+// IsEbook returns true if this item is an ebook (not an audiobook)
+// Detection is based on: ebookFileFormat being set OR having no audio files
+func (b *AudiobookshelfBook) IsEbook() bool {
+	// If ebookFileFormat is set, it's definitely an ebook
+	if b.Media.EbookFormat != "" {
+		return true
+	}
+	// If there are no audio files and no duration, it's likely an ebook
+	if b.Media.NumAudioFiles == 0 && b.Media.NumTracks == 0 && b.Media.Duration == 0 {
+		return true
+	}
+	return false
 }
 
 // GetID returns the book's unique identifier

@@ -376,27 +376,32 @@ func main() {
 		})
 	}
 
-	// Start periodic sync for all users if enabled
+	// Start periodic sync scheduler if enabled
+	// The scheduler checks every minute and syncs profiles based on their individual sync intervals
 	if !flags.serverOnly.value && cfg.Sync.SyncInterval > 0 {
-		syncInterval := cfg.Sync.SyncInterval
+		defaultSyncInterval := cfg.Sync.SyncInterval
 		if flags.syncInterval > 0 {
-			syncInterval = flags.syncInterval
+			defaultSyncInterval = flags.syncInterval
 		}
 
-		log.Info("Starting periodic sync for all users", map[string]interface{}{
-			"interval": syncInterval.String(),
+		log.Info("Starting periodic sync scheduler", map[string]interface{}{
+			"default_interval": defaultSyncInterval.String(),
+			"check_interval":   "1m",
 		})
 
-		// Start a ticker for periodic sync
-		ticker := time.NewTicker(syncInterval)
+		// Check interval - how often we check if any profile needs syncing
+		checkInterval := 1 * time.Minute
+		ticker := time.NewTicker(checkInterval)
 		defer ticker.Stop()
 
+		// Track last sync times per profile
+		lastSyncTimes := make(map[string]time.Time)
+
 		// Start the first sync after a short delay to avoid immediate sync on startup
-		// This allows the application to fully initialize before starting the first sync
 		initialSyncTicker := time.NewTicker(5 * time.Second)
 		defer initialSyncTicker.Stop()
 
-		// Periodic sync
+		// Periodic sync scheduler
 		go func() {
 			// Initial sync after delay
 			<-initialSyncTicker.C
@@ -411,21 +416,21 @@ func main() {
 						"profile_id": profile.ID,
 					})
 					go func(profileID string) {
-						log.Info("Starting initial sync for profile", map[string]interface{}{
-							"profile_id": profileID,
-						})
 						if err := multiUserService.StartSync(profileID); err != nil {
 							log.Error("Failed to start sync for profile", map[string]interface{}{
 								"profile_id": profileID,
 								"error":      err.Error(),
 							})
+						} else {
+							// Update last sync time
+							lastSyncTimes[profileID] = time.Now()
 						}
 					}(profile.ID)
 				}
 			}
 			initialSyncTicker.Stop()
 
-			// Regular periodic syncs
+			// Regular periodic syncs - check each profile's individual schedule
 			for {
 				select {
 				case <-ticker.C:
@@ -438,6 +443,11 @@ func main() {
 					}
 
 					for _, profile := range profiles {
+						// Skip inactive profiles
+						if !profile.Active {
+							continue
+						}
+						
 						// Skip if profile is already syncing
 						if multiUserService.IsProfileSyncing(profile.ID) {
 							log.Debug("Sync already in progress for profile, skipping", map[string]interface{}{
@@ -445,9 +455,26 @@ func main() {
 							})
 							continue
 						}
+						
+						// Get profile's sync interval
+						profileSyncInterval := defaultSyncInterval
+						profileWithConfig, err := multiUserService.GetProfile(profile.ID)
+						if err == nil && profileWithConfig != nil && profileWithConfig.SyncConfig.SyncInterval != "" {
+							if duration, err := time.ParseDuration(profileWithConfig.SyncConfig.SyncInterval); err == nil && duration > 0 {
+								profileSyncInterval = duration
+							}
+						}
+						
+						// Check if it's time to sync this profile
+						lastSync, hasLastSync := lastSyncTimes[profile.ID]
+						if hasLastSync && time.Since(lastSync) < profileSyncInterval {
+							// Not time yet
+							continue
+						}
 
-						log.Info("Starting periodic sync for profile", map[string]interface{}{
-							"profile_id": profile.ID,
+						log.Info("Starting scheduled sync for profile", map[string]interface{}{
+							"profile_id":    profile.ID,
+							"sync_interval": profileSyncInterval.String(),
 						})
 
 						go func(profileID string) {
@@ -456,6 +483,9 @@ func main() {
 									"profile_id": profileID,
 									"error":      err.Error(),
 								})
+							} else {
+								// Update last sync time on success
+								lastSyncTimes[profileID] = time.Now()
 							}
 						}(profile.ID)
 					}

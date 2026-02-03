@@ -435,6 +435,48 @@ func (h *Handler) CancelSync(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// PurgeProfileData handles POST /api/profiles/{id}/purge
+// This endpoint deletes all data associated with a profile (books, mappings, history, etc.)
+// but keeps the profile configuration itself.
+func (h *Handler) PurgeProfileData(w http.ResponseWriter, r *http.Request) {
+	profileID := h.extractProfileIDFromPurgePath(r.URL.Path)
+	if profileID == "" {
+		h.writeErrorResponse(w, http.StatusBadRequest, "Profile ID is required")
+		return
+	}
+
+	// Check if profile exists
+	_, err := h.multiUserService.GetProfile(profileID)
+	if err != nil {
+		h.log.Error(fmt.Sprintf("Failed to find sync profile %s for purge: %s", profileID, err.Error()))
+		h.writeErrorResponse(w, http.StatusNotFound, "Sync profile not found")
+		return
+	}
+
+	// Purge profile data
+	result, err := h.multiUserService.PurgeProfileData(profileID)
+	if err != nil {
+		h.log.Error(fmt.Sprintf("Failed to purge data for profile %s: %s", profileID, err.Error()))
+		h.writeErrorResponse(w, http.StatusInternalServerError, "Failed to purge profile data")
+		return
+	}
+
+	h.log.Info(fmt.Sprintf("Purged data for profile %s", profileID), map[string]interface{}{
+		"abs_books":         result.ABSBooks,
+		"hardcover_books":   result.HardcoverBooks,
+		"book_mappings":     result.BookMappings,
+		"progress_history":  result.ProgressHistory,
+		"sync_events":       result.SyncEvents,
+		"book_sync_logs":    result.BookSyncLogs,
+		"book_sync_configs": result.BookSyncConfigs,
+	})
+
+	h.writeSuccessResponse(w, map[string]interface{}{
+		"message": "Profile data purged successfully",
+		"deleted": result,
+	})
+}
+
 // Helper functions to extract profile ID from URL paths
 
 func (h *Handler) extractProfileID(path string) string {
@@ -471,6 +513,16 @@ func (h *Handler) extractProfileIDFromSyncPath(path string) string {
 	parts := strings.Split(path, "/")
 	for i, part := range parts {
 		if part == "profiles" && i+2 < len(parts) && parts[i+2] == "sync" {
+			return parts[i+1]
+		}
+	}
+	return ""
+}
+
+func (h *Handler) extractProfileIDFromPurgePath(path string) string {
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		if part == "profiles" && i+2 < len(parts) && parts[i+2] == "purge" {
 			return parts[i+1]
 		}
 	}

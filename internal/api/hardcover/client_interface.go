@@ -24,7 +24,10 @@ type HardcoverClientInterface interface {
 	GetEdition(ctx context.Context, editionID string) (*models.Edition, error)
 
 	// CheckBookOwnership checks if a book is in the user's "Owned" list
-	CheckBookOwnership(ctx context.Context, editionID int) (bool, error)
+	CheckBookOwnership(ctx context.Context, bookID int) (bool, error)
+
+	// CheckEditionOwnership checks if a specific edition is in the user's "Owned" list
+	CheckEditionOwnership(ctx context.Context, editionID int) (bool, error)
 
 	// MarkEditionAsOwned adds a book to the user's "Owned" list
 	MarkEditionAsOwned(ctx context.Context, editionID int) error

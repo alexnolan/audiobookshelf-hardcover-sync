@@ -3076,8 +3076,8 @@ func (c *Client) CreateUserBook(ctx context.Context, editionID, status string) (
 		"bookID":    edition.BookID,
 	})
 
-	// Get status ID based on status string
-	statusID, ok := statusNameToID[status]
+	// Get status ID based on status string (case-insensitive lookup)
+	statusID, ok := statusNameToID[strings.ToUpper(status)]
 	if !ok {
 		return "", errors.New("invalid status: " + status)
 	}
@@ -3276,6 +3276,61 @@ func (c *Client) CheckBookOwnership(ctx context.Context, bookID int) (bool, erro
 	owned := len(response.Lists) > 0 && len(response.Lists[0].ListBooks) > 0
 
 	log.Debug("Checked book ownership status", map[string]interface{}{
+		"is_owned": owned,
+	})
+
+	return owned, nil
+}
+
+// CheckEditionOwnership checks if a specific edition is in the user's "Owned" list
+func (c *Client) CheckEditionOwnership(ctx context.Context, editionID int) (bool, error) {
+	userID, err := c.GetCurrentUserID(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to get current user ID: %w", err)
+	}
+
+	log := c.logger.With(map[string]interface{}{
+		"editionID": editionID,
+		"userID":    userID,
+		"method":    "CheckEditionOwnership",
+	})
+
+	query := `
+	query CheckEditionOwnership($userId: Int!, $editionId: Int!) {
+	  lists(
+		where: {
+		  user_id: { _eq: $userId }
+		  name: { _eq: "Owned" }
+		  list_books: { edition_id: { _eq: $editionId } }
+		}
+	  ) {
+		id
+		name
+		list_books(where: { edition_id: { _eq: $editionId } }) {
+		  id
+		  book_id
+		  edition_id
+		}
+	  }
+	}`
+
+	var response CheckBookOwnershipResponse
+	err = c.GraphQLQuery(ctx, query, map[string]interface{}{
+		"userId":    userID,
+		"editionId": editionID,
+	}, &response)
+
+	if err != nil {
+		log.Error("Failed to execute GraphQL query", map[string]interface{}{
+			"error": err.Error(),
+		})
+		return false, fmt.Errorf("failed to check edition ownership: %w", err)
+	}
+
+	// If we have a list with list_books, the edition is owned
+	owned := len(response.Lists) > 0 && len(response.Lists[0].ListBooks) > 0
+
+	log.Debug("Checked edition ownership status", map[string]interface{}{
 		"is_owned": owned,
 	})
 

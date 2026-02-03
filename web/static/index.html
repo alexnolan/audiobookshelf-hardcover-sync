@@ -3,17 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Audiobookshelf-Hardcover Sync - Sync Profile Management</title>
+    <title>ABS-Hardcover Sync</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <link rel="stylesheet" href="styles.css?v=20240815-3">
+    <link rel="stylesheet" href="styles.css?v=20260203-1">
 </head>
 <body>
     <div class="container">
         <header>
             <div class="header-content">
                 <div class="header-left">
-                    <h1>📚 Audiobookshelf-Hardcover Sync</h1>
-                    <p>Sync Profile Management Dashboard</p>
+                    <div class="logo-title">
+                        <img src="favicon.svg" alt="Logo" class="header-logo">
+                        <h1>ABS-Hardcover Sync</h1>
+                    </div>
                 </div>
                 <div class="header-right" id="user-info">
                     <!-- User info will be loaded here -->
@@ -23,18 +26,18 @@
 
         <nav class="tabs">
             <button class="tab-button active" onclick="showTab('users')">Profiles</button>
-            <button class="tab-button" onclick="showTab('library')">Library</button>
-            <button class="tab-button" onclick="showTab('history')">Sync History</button>
+            <button class="tab-button" onclick="showTab('matching')">Matching</button>
+            <button class="tab-button" onclick="showTab('stats')">Stats</button>
         </nav>
 
-        <!-- Library Tab -->
-        <div id="library-tab" class="tab-content">
+        <!-- Matching Tab (formerly Library) -->
+        <div id="matching-tab" class="tab-content">
             <!-- Library HTML will be loaded here dynamically -->
             <div id="library-content">
                 <div class="section-header">
-                    <h2>Book Library</h2>
+                    <h2>Book Matching</h2>
                     <div class="header-controls">
-                        <select id="library-profile-select" onchange="libraryState.profileId = this.value; loadLibraryBooks()" style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
+                        <select id="library-profile-select" onchange="onLibraryProfileChange(this.value)" class="header-select">
                             <option value="">Select a Profile...</option>
                         </select>
                     </div>
@@ -54,10 +57,10 @@
             </div>
             
             <!-- Collapsible Add Profile Form -->
-            <div id="add-profile-section" style="display: none; margin-bottom: 1.5rem; padding: 1.5rem; background: #f9f9f9; border-radius: 8px; border: 1px solid #e0e0e0;">
-                <h3 style="margin-top: 0;">Add New Sync Profile</h3>
+            <div id="add-profile-section" class="add-profile-section" style="display: none;">
+                <h3>Add New Sync Profile</h3>
                 <form id="inline-add-user-form" class="user-form" onsubmit="handleAddUser(event)">
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem;">
+                    <div class="add-profile-grid">
                         <div class="form-group">
                             <label for="inline-user-id">User ID:</label>
                             <input type="text" id="inline-user-id" name="id" required placeholder="unique-user-id">
@@ -79,7 +82,7 @@
                             <input type="password" id="inline-hc-token" name="hardcover_token" required placeholder="Your Hardcover API token">
                         </div>
                     </div>
-                    <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                    <div class="add-profile-actions">
                         <button type="submit" class="btn btn-primary">Create Profile</button>
                         <button type="button" class="btn btn-secondary" onclick="toggleAddProfileForm()">Cancel</button>
                     </div>
@@ -91,22 +94,22 @@
             </div>
         </div>
 
-        <!-- Sync History Tab (renamed from Book Sync Logs) -->
-        <div id="history-tab" class="tab-content">
+        <!-- Stats Tab (formerly Sync History) -->
+        <div id="stats-tab" class="tab-content">
             <div class="section-header">
-                <h2>Sync History</h2>
+                <h2>Sync Stats</h2>
                 <div class="header-controls">
-                    <select id="profile-select" onchange="loadBookSyncLogs()" style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
+                    <select id="profile-select" onchange="loadBookSyncLogs()" class="header-select">
                         <option value="">Select a Profile...</option>
                     </select>
-                    <select id="status-filter" onchange="loadBookSyncLogs()" style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc; margin-left: 0.5rem;">
+                    <select id="status-filter" onchange="loadBookSyncLogs()" class="header-select">
                         <option value="">All Statuses</option>
                         <option value="SYNCED">Synced</option>
                         <option value="SKIPPED">Skipped</option>
                         <option value="ERROR">Errors</option>
                         <option value="NOT_FOUND">Not Found</option>
                     </select>
-                    <button class="btn btn-primary" onclick="loadBookSyncLogs()" style="margin-left: 0.5rem;">🔄 Refresh</button>
+                    <button class="btn btn-primary" onclick="loadBookSyncLogs()">🔄 Refresh</button>
                 </div>
             </div>
             
@@ -121,7 +124,10 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Edit Sync Profile</h3>
-                <button type="button" class="modal-close" onclick="closeEditModal()">&times;</button>
+                <div class="modal-header-actions">
+                    <button type="submit" form="edit-user-form" class="btn btn-primary btn-sm">Update Profile</button>
+                    <button type="button" class="modal-close" onclick="closeEditModal()">&times;</button>
+                </div>
             </div>
             <form id="edit-user-form" class="user-form">
                 <input type="hidden" id="edit-user-id" name="id">
@@ -148,9 +154,111 @@
                     <button type="button" class="btn-toggle-password" onclick="togglePassword('edit-hc-token')">👁️</button>
                 </div>
 
+                <!-- ABS Data Collection Section -->
                 <div class="form-section">
-                    <h3>Sync Configuration</h3>
+                    <h3>📚 AudiobookShelf Data Collection</h3>
+                    <p class="section-description">Control which books are fetched from AudiobookShelf for comparison and sync.</p>
                     
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="edit-include-ebooks" name="include_ebooks">
+                            Include Ebooks
+                        </label>
+                        <small>Also fetch items with media type "ebook" (default: audiobooks only)</small>
+                    </div>
+
+                    <div class="form-subsection">
+                        <h4>Library Filtering</h4>
+                        <div class="form-group">
+                            <label for="edit-library-filter-mode">Library Filter Mode:</label>
+                            <select id="edit-library-filter-mode" name="library_filter_mode" onchange="handleLibraryFilterModeChange()">
+                                <option value="">All Libraries (no filter)</option>
+                                <option value="include">Include Only Selected</option>
+                                <option value="exclude">Exclude Selected</option>
+                            </select>
+                            <small>Choose whether to include only selected libraries, or exclude selected libraries</small>
+                        </div>
+
+                        <div class="form-group" id="library-select-group" style="display: none;">
+                            <label for="edit-filtered-libraries" id="library-select-label">Select Libraries:</label>
+                            <select id="edit-filtered-libraries" name="filtered_libraries" multiple size="4">
+                                <option value="">Loading libraries...</option>
+                            </select>
+                            <small>Hold Ctrl/Cmd to select multiple libraries</small>
+                        </div>
+                    </div>
+
+                    <div class="form-subsection">
+                        <h4>Collection Filtering</h4>
+                        <div class="form-group">
+                            <label for="edit-include-collections">Include Collections (optional):</label>
+                            <select id="edit-include-collections" name="include_collections" multiple size="4">
+                                <option value="">Loading collections...</option>
+                            </select>
+                            <small>Only fetch books from these collections. Leave empty to include all.</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="edit-exclude-collections">Exclude Collections (optional):</label>
+                            <select id="edit-exclude-collections" name="exclude_collections" multiple size="4">
+                                <option value="">Loading collections...</option>
+                            </select>
+                            <small>Exclude books in these collections from sync.</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Book Processing Section -->
+                <div class="form-section">
+                    <h3>📖 Book Processing</h3>
+                    <p class="section-description">Control how individual books are processed during sync.</p>
+                    
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="edit-process-unread-books" name="process_unread_books" checked onchange="handleProcessUnreadChange()">
+                            <strong>Process 0% Progress Books</strong>
+                        </label>
+                        <small>When enabled, books you haven't started listening to (0% progress) will be processed for matching and status updates. When disabled, only books with listening progress are processed.</small>
+                    </div>
+
+                    <div class="form-group" id="sync-want-to-read-group">
+                        <label>
+                            <input type="checkbox" id="edit-sync-want-to-read" name="sync_want_to_read">
+                            <strong>Sync as "Want to Read"</strong>
+                        </label>
+                        <small>When enabled, 0% progress books will be synced to Hardcover with "Want to Read" status.</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit-minimum-progress">Minimum Progress Threshold:</label>
+                        <input type="number" id="edit-minimum-progress" name="minimum_progress" min="0" max="1" step="0.01">
+                        <small>Ignore progress changes smaller than this value (0.0-1.0). Default: 0.01 (1%)</small>
+                    </div>
+                </div>
+
+                <!-- Sync Behavior Section -->
+                <div class="form-section">
+                    <h3>🔄 Sync Behavior</h3>
+                    <p class="section-description">Configure how and when syncing occurs.</p>
+                    
+                    <div class="form-group">
+                        <label for="edit-sync-mode">Sync Mode:</label>
+                        <select id="edit-sync-mode" name="sync_mode" onchange="handleSyncModeChange()">
+                            <option value="needs_sync">Needs Sync (books with progress differences)</option>
+                            <option value="sync_all">Sync All (all mapped books)</option>
+                            <option value="collections">Collections (selected collections only)</option>
+                        </select>
+                        <small>Choose which books to sync during batch operations</small>
+                    </div>
+
+                    <div class="form-group" id="collections-select-group" style="display: none;">
+                        <label for="edit-selected-collections">Select Collections to Sync:</label>
+                        <select id="edit-selected-collections" name="selected_collections" multiple size="6">
+                            <option value="">Loading collections...</option>
+                        </select>
+                        <small>Only sync books in these collections</small>
+                    </div>
+
                     <div class="form-group">
                         <label for="edit-conflict-resolution">Conflict Resolution Strategy:</label>
                         <select id="edit-conflict-resolution" name="conflict_resolution_mode">
@@ -160,18 +268,6 @@
                             <option value="manual">Manual Review Required</option>
                         </select>
                         <small>How to resolve conflicts when progress differs between ABS and Hardcover</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="edit-hc-refresh-interval">Hardcover Refresh Interval:</label>
-                        <select id="edit-hc-refresh-interval" name="hc_refresh_interval">
-                            <option value="1h">Every Hour</option>
-                            <option value="6h">Every 6 Hours</option>
-                            <option value="12h">Every 12 Hours</option>
-                            <option value="24h">Every 24 Hours (default)</option>
-                            <option value="7d">Every 7 Days</option>
-                        </select>
-                        <small>How frequently to re-fetch books from Hardcover API</small>
                     </div>
                     
                     <div class="form-group">
@@ -183,69 +279,45 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="edit-sync-interval">Sync Interval:</label>
+                        <label for="edit-sync-interval">Automatic Sync Interval:</label>
                         <select id="edit-sync-interval" name="sync_interval">
-                            <option value="1h">1 Hour</option>
-                            <option value="2h">2 Hours</option>
-                            <option value="6h">6 Hours</option>
-                            <option value="12h">12 Hours</option>
-                            <option value="24h">24 Hours</option>
+                            <option value="">Disabled (manual sync only)</option>
+                            <option value="1h">Every Hour</option>
+                            <option value="2h">Every 2 Hours</option>
+                            <option value="6h">Every 6 Hours</option>
+                            <option value="12h">Every 12 Hours</option>
+                            <option value="24h">Every 24 Hours</option>
                         </select>
+                        <small>How often this profile automatically syncs. Set to "Disabled" for manual sync only.</small>
                     </div>
+                </div>
 
+                <!-- Hardcover Options Section -->
+                <div class="form-section">
+                    <h3>📗 Hardcover Options</h3>
+                    <p class="section-description">Settings for how data is fetched from and updated in Hardcover.</p>
+                    
                     <div class="form-group">
-                        <label for="edit-minimum-progress">Minimum Progress (0.0-1.0):</label>
-                        <input type="number" id="edit-minimum-progress" name="minimum_progress" min="0" max="1" step="0.01">
-                        <small>Minimum progress threshold to sync a book</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="edit-sync-want-to-read" name="sync_want_to_read">
-                            Sync "Want to Read" books (0% progress)
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="edit-process-unread-books" name="process_unread_books" checked>
-                            Process unread books (0% progress)
-                        </label>
-                        <small>Also process books with 0% progress for mismatches and "want to read" status</small>
+                        <label for="edit-hc-refresh-interval">Data Refresh Interval:</label>
+                        <select id="edit-hc-refresh-interval" name="hc_refresh_interval">
+                            <option value="1h">Every Hour</option>
+                            <option value="6h">Every 6 Hours</option>
+                            <option value="12h">Every 12 Hours</option>
+                            <option value="24h">Every 24 Hours (default)</option>
+                            <option value="7d">Every 7 Days</option>
+                        </select>
+                        <small>How frequently to re-fetch your book data from Hardcover API</small>
                     </div>
 
                     <div class="form-group">
                         <label>
                             <input type="checkbox" id="edit-sync-owned" name="sync_owned">
-                            Mark synced books as owned in Hardcover
+                            Mark synced books as owned
                         </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="edit-include-ebooks" name="include_ebooks">
-                            Include Ebooks
-                        </label>
-                        <small>Include items with media type "ebook" in sync (default: off)</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="edit-include-libraries">Include Libraries (comma-separated):</label>
-                        <input type="text" id="edit-include-libraries" name="include_libraries" placeholder="Audiobooks, Fiction">
-                        <small>Leave empty to include all libraries</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="edit-exclude-libraries">Exclude Libraries (comma-separated):</label>
-                        <input type="text" id="edit-exclude-libraries" name="exclude_libraries" placeholder="Podcasts, Magazines">
-                        <small>Libraries to exclude from sync</small>
+                        <small>Add synced audiobooks to your "Owned" list in Hardcover</small>
                     </div>
                 </div>
 
-                <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">Update Profile</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
-                </div>
             </form>
         </div>
     </div>
@@ -287,7 +359,6 @@
 
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Save Settings</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeBookConfigModal()">Cancel</button>
                 </div>
             </form>
         </div>
@@ -327,7 +398,6 @@
 
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Create Mapping</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeBookMappingModal()">Cancel</button>
                 </div>
             </form>
         </div>

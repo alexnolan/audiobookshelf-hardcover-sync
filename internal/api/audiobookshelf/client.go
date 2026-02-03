@@ -25,6 +25,20 @@ type AudiobookshelfLibrary struct {
 	Name string `json:"name"`
 }
 
+// AudiobookshelfCollection represents a collection in Audiobookshelf
+type AudiobookshelfCollection struct {
+	ID          string   `json:"id"`
+	LibraryID   string   `json:"libraryId"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	BookIDs     []string `json:"book_ids"` // Populated from books array
+}
+
+// collectionBook is used for parsing collection response
+type collectionBook struct {
+	ID string `json:"id"`
+}
+
 // Client is a client for the Audiobookshelf API
 type Client struct {
 	baseURL string
@@ -108,6 +122,89 @@ func (c *Client) GetLibraries(ctx context.Context) ([]AudiobookshelfLibrary, err
 		"count": len(result.Libraries),
 	})
 	return result.Libraries, nil
+}
+
+// GetCollections fetches all collections from Audiobookshelf
+func (c *Client) GetCollections(ctx context.Context) ([]AudiobookshelfCollection, error) {
+	const endpoint = "/collections"
+	log := c.logger.With(map[string]interface{}{
+		"endpoint": endpoint,
+	})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+apiPath+endpoint, nil)
+	if err != nil {
+		log.Error("Failed to create request", map[string]interface{}{
+			"error": err.Error(),
+		})
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		log.Error("Request failed", map[string]interface{}{
+			"error": err.Error(),
+		})
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Error("Failed to read response body", map[string]interface{}{
+			"error": err.Error(),
+		})
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		log.Error("Unexpected status code", map[string]interface{}{
+			"status": resp.StatusCode,
+			"body":   string(body),
+		})
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	// Parse the collections response - wrapped in {"collections": [...]}
+	var wrapper struct {
+		Collections []struct {
+			ID          string           `json:"id"`
+			LibraryID   string           `json:"libraryId"`
+			Name        string           `json:"name"`
+			Description string           `json:"description"`
+			Books       []collectionBook `json:"books"`
+		} `json:"collections"`
+	}
+
+	if err := json.Unmarshal(body, &wrapper); err != nil {
+		log.Error("Failed to decode response", map[string]interface{}{
+			"error": err.Error(),
+		})
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Convert to our type, extracting book IDs
+	collections := make([]AudiobookshelfCollection, len(wrapper.Collections))
+	for i, raw := range wrapper.Collections {
+		bookIDs := make([]string, len(raw.Books))
+		for j, book := range raw.Books {
+			bookIDs[j] = book.ID
+		}
+		collections[i] = AudiobookshelfCollection{
+			ID:          raw.ID,
+			LibraryID:   raw.LibraryID,
+			Name:        raw.Name,
+			Description: raw.Description,
+			BookIDs:     bookIDs,
+		}
+	}
+
+	log.Info("Successfully fetched collections", map[string]interface{}{
+		"count": len(collections),
+	})
+	return collections, nil
 }
 
 // GetLibraryItems returns all library items from a specific Audiobookshelf library

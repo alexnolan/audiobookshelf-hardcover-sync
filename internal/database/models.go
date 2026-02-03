@@ -47,23 +47,54 @@ type ProfileSyncState struct {
 }
 
 // SyncConfigData represents the structure of sync configuration
+// SyncMode represents the sync operation mode
+type SyncMode string
+
+const (
+	// SyncModeNeedsSync syncs only books with progress differences (default)
+	SyncModeNeedsSync SyncMode = "needs_sync"
+	// SyncModeAll syncs all matched books regardless of current state
+	SyncModeAll SyncMode = "sync_all"
+	// SyncModeCollections syncs only books in selected ABS collections
+	SyncModeCollections SyncMode = "collections"
+)
+
+// LibraryFilterMode determines whether the library filter includes or excludes
+type LibraryFilterMode string
+
+const (
+	LibraryFilterModeInclude LibraryFilterMode = "include"
+	LibraryFilterModeExclude LibraryFilterMode = "exclude"
+)
+
 type SyncConfigData struct {
 	Incremental        bool     `json:"incremental"`
 	StateFile          string   `json:"state_file"`
 	MinChangeThreshold int      `json:"min_change_threshold"`
+	// Legacy library filtering (kept for backward compatibility during migration)
 	Libraries          struct {
 		Include []string `json:"include"`
 		Exclude []string `json:"exclude"`
 	} `json:"libraries"`
-	SyncInterval       string  `json:"sync_interval"`
-	MinimumProgress    float64 `json:"minimum_progress"`
-	SyncWantToRead     bool    `json:"sync_want_to_read"`
-	ProcessUnreadBooks bool    `json:"process_unread_books"`
-	SyncOwned          bool    `json:"sync_owned"`
-	IncludeEbooks      bool    `json:"include_ebooks"`
-	DryRun             bool    `json:"dry_run"`
-	TestBookFilter     string  `json:"test_book_filter"`
-	TestBookLimit      int     `json:"test_book_limit"`
+	// New library filter mode: "include" or "exclude"
+	LibraryFilterMode  LibraryFilterMode `json:"library_filter_mode"`
+	// Libraries to include or exclude (based on LibraryFilterMode)
+	FilteredLibraries  []string          `json:"filtered_libraries"`
+	SyncInterval        string   `json:"sync_interval"`
+	MinimumProgress     float64  `json:"minimum_progress"`
+	SyncWantToRead      bool     `json:"sync_want_to_read"`
+	ProcessUnreadBooks  bool     `json:"process_unread_books"`
+	SyncOwned           bool     `json:"sync_owned"`
+	IncludeEbooks       bool     `json:"include_ebooks"`
+	DryRun              bool     `json:"dry_run"`
+	TestBookFilter      string   `json:"test_book_filter"`
+	TestBookLimit       int      `json:"test_book_limit"`
+	// Sync mode fields
+	SyncMode            SyncMode `json:"sync_mode"`             // needs_sync, sync_all, collections
+	SelectedCollections []string `json:"selected_collections"`  // ABS collection IDs for collections mode
+	// Collection filtering for ABS data collection (both can be set)
+	IncludeCollections  []string `json:"include_collections"`   // Only fetch books from these collections
+	ExcludeCollections  []string `json:"exclude_collections"`   // Exclude books from these collections
 }
 
 // IsEmpty checks if the SyncConfigData is empty (all fields at their zero values)
@@ -73,6 +104,8 @@ func (s SyncConfigData) IsEmpty() bool {
 		s.MinChangeThreshold == 0 &&
 		len(s.Libraries.Include) == 0 &&
 		len(s.Libraries.Exclude) == 0 &&
+		s.LibraryFilterMode == "" &&
+		len(s.FilteredLibraries) == 0 &&
 		s.SyncInterval == "" &&
 		s.MinimumProgress == 0 &&
 		!s.SyncWantToRead &&
@@ -81,7 +114,11 @@ func (s SyncConfigData) IsEmpty() bool {
 		!s.IncludeEbooks &&
 		!s.DryRun &&
 		s.TestBookFilter == "" &&
-		s.TestBookLimit == 0
+		s.TestBookLimit == 0 &&
+		s.SyncMode == "" &&
+		len(s.SelectedCollections) == 0 &&
+		len(s.IncludeCollections) == 0 &&
+		len(s.ExcludeCollections) == 0
 }
 
 // BeforeCreate hook for SyncProfile
@@ -190,6 +227,7 @@ type ABSBook struct {
 	ProfileID     string    `gorm:"index:idx_abs_profile_id;uniqueIndex:idx_profile_abs_unique,priority:1;not null" json:"profile_id"`
 	ABSID         string    `gorm:"index:idx_abs_id;uniqueIndex:idx_profile_abs_unique,priority:2;not null" json:"abs_id"`
 	LibraryID     string    `gorm:"index:idx_abs_library_id" json:"library_id"`
+	MediaType     string    `gorm:"index:idx_abs_media_type" json:"media_type"` // "book" or "ebook"
 	Title         string    `gorm:"not null" json:"title"`
 	Author        string    `json:"author"`
 	Narrator      string    `json:"narrator"`
