@@ -204,6 +204,66 @@ export HARDCOVER_TOKEN="your-hardcover-token"
    - View "Book Sync Logs" for historical sync events
    - Each profile syncs independently
 
+### Command-Line Interface
+
+The application supports several CLI flags for different operation modes:
+
+#### Available Flags
+
+```bash
+# Show help
+./audiobookshelf-hardcover-sync --help
+
+# Show version
+./audiobookshelf-hardcover-sync --version
+
+# Run sync once and exit (useful for cron jobs)
+./audiobookshelf-hardcover-sync --once
+
+# Start server without periodic sync (web UI only)
+./audiobookshelf-hardcover-sync --server-only
+
+# Configuration file path
+./audiobookshelf-hardcover-sync --config /path/to/config.yaml
+
+# Override config with CLI flags
+./audiobookshelf-hardcover-sync \
+  --audiobookshelf-url https://abs.example.com \
+  --audiobookshelf-token your-token \
+  --hardcover-token your-token \
+  --sync-interval 1h
+
+# Dry run mode (no changes will be made)
+./audiobookshelf-hardcover-sync --dry-run
+
+# Testing options
+./audiobookshelf-hardcover-sync \
+  --test-book-filter "Harry Potter" \
+  --test-book-limit 5
+```
+
+#### Common Usage Patterns
+
+**One-time sync** (e.g., from cron):
+```bash
+./audiobookshelf-hardcover-sync --once --config /etc/abs-sync/config.yaml
+```
+
+**Web UI with auto-sync**:
+```bash
+ENABLE_WEB_UI=true ./audiobookshelf-hardcover-sync
+```
+
+**Web UI without auto-sync** (manual control only):
+```bash
+ENABLE_WEB_UI=true ./audiobookshelf-hardcover-sync --server-only
+```
+
+**Legacy single-user mode** (periodic sync, no web UI):
+```bash
+./audiobookshelf-hardcover-sync --config config.yaml
+```
+
 ### Using the REST API
 
 The application provides a comprehensive REST API for programmatic control:
@@ -269,7 +329,7 @@ curl -X POST http://localhost:8765/api/profiles/{id}/books/sync-batch \
 curl http://localhost:8765/api/profiles/{id}/books/{absBookId}/history
 
 # Manually map a book to Hardcover edition
-curl -X POST http://localhost:8765/api/profiles/{id}/books/{absBookId}/map \
+curl -X POST http://localhost:8765/api/profiles/{id}/books/{absBookId}/mapping \
   -H "Content-Type: application/json" \
   -d '{"hardcover_edition_id": 12345, "confidence": 100}'
 ```

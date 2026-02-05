@@ -58,6 +58,7 @@ func New(addr string, multiUserService *multiuser.MultiUserService, authService 
 	
 	// Health check (no auth required)
 	handler.HandleFunc("GET /health", s.handleHealthCheck)
+	handler.HandleFunc("GET /healthz", s.handleHealthCheck) // Alias for Kubernetes-style health checks
 	
 	// Authentication endpoints (no auth required for login)
 	handler.HandleFunc("GET /login", s.authHandlers.HandleLogin)  // Serve login page
