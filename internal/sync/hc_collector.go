@@ -287,3 +287,43 @@ func (c *HCCollector) GetUserBookReads(ctx context.Context, userBookID int64) ([
 		UserBookID: userBookID,
 	})
 }
+
+// SearchPeople searches for authors or narrators by name
+func (c *HCCollector) SearchPeople(ctx context.Context, name, personType string, limit int) ([]models.Author, error) {
+	// Wait for rate limit
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit wait error: %w", err)
+	}
+
+	return c.hcClient.SearchPeople(ctx, name, personType, limit)
+}
+
+// SearchPublishers searches for publishers by name
+func (c *HCCollector) SearchPublishers(ctx context.Context, name string, limit int) ([]models.Publisher, error) {
+	// Wait for rate limit
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit wait error: %w", err)
+	}
+
+	return c.hcClient.SearchPublishers(ctx, name, limit)
+}
+
+// GraphQLQuery executes a GraphQL query with rate limiting
+func (c *HCCollector) GraphQLQuery(ctx context.Context, query string, variables map[string]interface{}, result interface{}) error {
+	// Wait for rate limit
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return fmt.Errorf("rate limit wait error: %w", err)
+	}
+
+	return c.hcClient.GraphQLQuery(ctx, query, variables, result)
+}
+
+// GraphQLMutation executes a GraphQL mutation with rate limiting
+func (c *HCCollector) GraphQLMutation(ctx context.Context, mutation string, variables map[string]interface{}, result interface{}) error {
+	// Wait for rate limit
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return fmt.Errorf("rate limit wait error: %w", err)
+	}
+
+	return c.hcClient.GraphQLMutation(ctx, mutation, variables, result)
+}

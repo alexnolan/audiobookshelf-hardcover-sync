@@ -108,6 +108,17 @@ func New(addr string, multiUserService *multiuser.MultiUserService, authService 
 	apiMux.HandleFunc("GET /profiles/{id}/books/{absBookId}/search-hardcover", s.handleAPILibrarySearchHardcover)
 	apiMux.HandleFunc("GET /profiles/{id}/search-hardcover", s.handleAPILibrarySearchHardcoverByQuery)
 	apiMux.HandleFunc("POST /profiles/{id}/books/{absBookId}/add-to-hardcover", s.handleAPILibraryAddToHardcover)
+	
+	// People and Publisher search endpoints
+	apiMux.HandleFunc("GET /profiles/{id}/search-people", s.handleAPILibrarySearchPeople)
+	apiMux.HandleFunc("GET /profiles/{id}/search-publishers", s.handleAPILibrarySearchPublishers)
+	
+	// Edition creation endpoints
+	apiMux.HandleFunc("POST /profiles/{id}/editions", s.handleAPILibraryCreateEdition)
+	apiMux.HandleFunc("GET /profiles/{id}/editions/prepopulate", s.handleAPILibraryPrepopulateEdition)
+	
+	// Image upload endpoint
+	apiMux.HandleFunc("POST /profiles/{id}/upload-image", s.handleAPILibraryUploadImage)
 
 	// Mount API routes under /api with auth middleware
 	handler.Handle("/api/", s.authMiddleware.RequireAuth(http.StripPrefix("/api", apiMux)))
@@ -555,4 +566,29 @@ func (s *Server) handleAPIPurgeProfileData(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.apiHandler.PurgeProfileData(w, r)
+}
+
+// handleAPILibrarySearchPeople handles GET /api/profiles/{id}/search-people
+func (s *Server) handleAPILibrarySearchPeople(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.SearchPeopleHandler(w, r)
+}
+
+// handleAPILibrarySearchPublishers handles GET /api/profiles/{id}/search-publishers
+func (s *Server) handleAPILibrarySearchPublishers(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.SearchPublishersHandler(w, r)
+}
+
+// handleAPILibraryCreateEdition handles POST /api/profiles/{id}/editions
+func (s *Server) handleAPILibraryCreateEdition(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.CreateEditionHandler(w, r)
+}
+
+// handleAPILibraryPrepopulateEdition handles GET /api/profiles/{id}/editions/prepopulate
+func (s *Server) handleAPILibraryPrepopulateEdition(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.PrepopulateEditionHandler(w, r)
+}
+
+// handleAPILibraryUploadImage handles POST /api/profiles/{id}/upload-image
+func (s *Server) handleAPILibraryUploadImage(w http.ResponseWriter, r *http.Request) {
+	s.libraryAPI.UploadImageHandler(w, r)
 }

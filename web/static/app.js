@@ -4061,6 +4061,15 @@ function renderEditionList(editions) {
 
     html += '</tbody></table></div>';
     
+    // Add "Create New Edition" button
+    html += `
+        <div class="text-center mt-1 mb-1">
+            <button class="btn btn-secondary" onclick="openCreateEditionModal()">
+                <i class="fas fa-plus"></i> Create New Audiobook Edition
+            </button>
+        </div>
+    `;
+    
     // Add link to view on Hardcover
     if (editionSelectorState.hcSlug) {
         html += `
@@ -4107,6 +4116,249 @@ function closeEditionSelector() {
     const modal = document.getElementById('edition-selector-modal');
     if (modal) modal.remove();
     editionSelectorState = { absBookId: null, hcBookId: null, hcSlug: null, editions: [] };
+}
+
+// Create Edition state
+let createEditionState = {
+    bookId: null,
+    prepopulated: null
+};
+
+// Open create edition modal
+async function openCreateEditionModal() {
+    if (!libraryState.profileId || !editionSelectorState.hcBookId) {
+        app.showToast('Book information not available', 'error');
+        return;
+    }
+
+    createEditionState = { bookId: editionSelectorState.hcBookId, prepopulated: null };
+
+    // Show loading modal
+    const modalHtml = `
+        <div id="create-edition-modal" class="modal-overlay">
+            <div class="modal-content modal-large">
+                <button class="modal-close" onclick="closeCreateEditionModal()" title="Close">&times;</button>
+                <h3 style="margin-top: 0; padding-right: 2rem;">Create New Audiobook Edition</h3>
+                <div id="create-edition-form">
+                    <div class="loading-spinner"></div>
+                    <p>Loading book data...</p>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    // Add click-outside-to-close handler
+    const modal = document.getElementById('create-edition-modal');
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeCreateEditionModal();
+    });
+
+    // Fetch prepopulated data
+    try {
+        const response = await fetch(`/api/profiles/${libraryState.profileId}/editions/prepopulate?book_id=${createEditionState.bookId}`);
+        const data = await response.json();
+
+        if (data.success && data.data) {
+            createEditionState.prepopulated = data.data;
+            renderCreateEditionForm(data.data);
+        } else {
+            document.getElementById('create-edition-form').innerHTML = `
+                <p class="text-danger">Failed to load book data: ${data.error || 'Unknown error'}</p>
+            `;
+        }
+    } catch (error) {
+        console.error('Failed to fetch prepopulated data:', error);
+        document.getElementById('create-edition-form').innerHTML = `
+            <p class="text-danger">Failed to load book data</p>
+        `;
+    }
+}
+
+// Render create edition form
+function renderCreateEditionForm(prepopulated) {
+    const html = `
+        <form id="edition-form" onsubmit="submitCreateEdition(event)">
+            <div class="form-group">
+                <label for="edition-title">Title *</label>
+                <input type="text" id="edition-title" class="form-input" value="${escapeHtml(prepopulated.title || '')}" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="edition-subtitle">Subtitle</label>
+                <input type="text" id="edition-subtitle" class="form-input" value="${escapeHtml(prepopulated.subtitle || '')}">
+            </div>
+            
+            <div class="form-group">
+                <label for="edition-asin">ASIN</label>
+                <input type="text" id="edition-asin" class="form-input" value="${escapeHtml(prepopulated.asin || '')}">
+                <small class="text-muted">Amazon Standard Identification Number</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="edition-isbn13">ISBN-13</label>
+                <input type="text" id="edition-isbn13" class="form-input" value="${escapeHtml(prepopulated.isbn_13 || '')}">
+            </div>
+            
+            <div class="form-group">
+                <label for="edition-isbn10">ISBN-10</label>
+                <input type="text" id="edition-isbn10" class="form-input" value="${escapeHtml(prepopulated.isbn_10 || '')}">
+            </div>
+            
+            <div class="form-group">
+                <label for="edition-image-url">Cover Image URL</label>
+                <input type="url" id="edition-image-url" class="form-input" value="${escapeHtml(prepopulated.image_url || '')}">
+            </div>
+            
+            <div class="form-group">
+                <label for="edition-publisher-search">Publisher</label>
+                <div class="search-box">
+                    <input type="text" id="edition-publisher-search" class="form-input" 
+                        placeholder="Search for publisher..." 
+                        onkeyup="searchPublishers(this.value)">
+                    <input type="hidden" id="edition-publisher-id" value="${prepopulated.publisher_id || ''}">
+                </div>
+                <div id="publisher-results" class="search-results"></div>
+            </div>
+            
+            <div class="form-group">
+                <label for="edition-audio-length">Audio Length (seconds)</label>
+                <input type="number" id="edition-audio-length" class="form-input" value="${prepopulated.audio_seconds || ''}">
+                <small class="text-muted">Total duration in seconds</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="edition-release-date">Release Date</label>
+                <input type="date" id="edition-release-date" class="form-input" value="${prepopulated.release_date || ''}">
+            </div>
+            
+            <div class="form-group">
+                <label for="edition-format">Edition Format</label>
+                <input type="text" id="edition-format" class="form-input" value="${prepopulated.edition_format || 'Audible Audio'}" 
+                    placeholder="e.g., Audible Audio, MP3 CD">
+            </div>
+            
+            <div class="form-group">
+                <label for="edition-info">Edition Information</label>
+                <textarea id="edition-info" class="form-input" rows="3" 
+                    placeholder="Any additional information about this edition...">${escapeHtml(prepopulated.edition_information || '')}</textarea>
+            </div>
+            
+            <div class="form-actions mt-1">
+                <button type="button" class="btn btn-secondary" onclick="closeCreateEditionModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Edition</button>
+            </div>
+        </form>
+    `;
+    
+    document.getElementById('create-edition-form').innerHTML = html;
+}
+
+// Search publishers with debouncing
+let publisherSearchTimeout;
+async function searchPublishers(query) {
+    clearTimeout(publisherSearchTimeout);
+    
+    if (!query || query.length < 2) {
+        document.getElementById('publisher-results').innerHTML = '';
+        return;
+    }
+    
+    publisherSearchTimeout = setTimeout(async () => {
+        try {
+            const response = await fetch(`/api/profiles/${libraryState.profileId}/search-publishers?name=${encodeURIComponent(query)}&limit=10`);
+            const data = await response.json();
+            
+            if (data.success && data.data && data.data.length > 0) {
+                let html = '<div class="dropdown-list">';
+                data.data.forEach(pub => {
+                    html += `
+                        <div class="dropdown-item" onclick="selectPublisher('${pub.id}', '${escapeHtml(pub.name)}')">
+                            ${escapeHtml(pub.name)}
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                document.getElementById('publisher-results').innerHTML = html;
+            } else {
+                document.getElementById('publisher-results').innerHTML = '<p class="text-muted text-small">No publishers found</p>';
+            }
+        } catch (error) {
+            console.error('Failed to search publishers:', error);
+        }
+    }, 300);
+}
+
+// Select publisher from search results
+function selectPublisher(id, name) {
+    document.getElementById('edition-publisher-id').value = id;
+    document.getElementById('edition-publisher-search').value = name;
+    document.getElementById('publisher-results').innerHTML = '';
+}
+
+// Submit create edition form
+async function submitCreateEdition(event) {
+    event.preventDefault();
+    
+    if (!libraryState.profileId || !createEditionState.bookId) {
+        app.showToast('Missing required data', 'error');
+        return;
+    }
+    
+    const formData = {
+        book_id: createEditionState.bookId,
+        title: document.getElementById('edition-title').value,
+        subtitle: document.getElementById('edition-subtitle').value || undefined,
+        asin: document.getElementById('edition-asin').value || undefined,
+        isbn_13: document.getElementById('edition-isbn13').value || undefined,
+        isbn_10: document.getElementById('edition-isbn10').value || undefined,
+        image_url: document.getElementById('edition-image-url').value || undefined,
+        publisher_id: parseInt(document.getElementById('edition-publisher-id').value) || undefined,
+        audio_seconds: parseInt(document.getElementById('edition-audio-length').value) || undefined,
+        release_date: document.getElementById('edition-release-date').value || undefined,
+        edition_format: document.getElementById('edition-format').value || undefined,
+        edition_information: document.getElementById('edition-info').value || undefined,
+        language_id: 1, // Default to English
+        author_ids: createEditionState.prepopulated?.author_ids || []
+    };
+    
+    try {
+        app.showToast('Creating edition...', 'info');
+        
+        const response = await fetch(`/api/profiles/${libraryState.profileId}/editions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            app.showToast('Edition created successfully!', 'success');
+            closeCreateEditionModal();
+            
+            // Refresh the editions list in the edition selector
+            if (editionSelectorState.hcBookId) {
+                const editionsResponse = await fetch(`/api/profiles/${libraryState.profileId}/editions?book_id=${editionSelectorState.hcBookId}`);
+                const editionsData = await editionsResponse.json();
+                if (editionsData.success && editionsData.data) {
+                    editionSelectorState.editions = editionsData.data;
+                    renderEditionList(editionsData.data);
+                }
+            }
+        } else {
+            app.showToast(data.error || 'Failed to create edition', 'error');
+        }
+    } catch (error) {
+        console.error('Failed to create edition:', error);
+        app.showToast('Failed to create edition', 'error');
+    }
+}
+
+// Close create edition modal
+function closeCreateEditionModal() {
+    const modal = document.getElementById('create-edition-modal');
+    if (modal) modal.remove();
+    createEditionState = { bookId: null, prepopulated: null };
 }
 
 // Add to Hardcover state
