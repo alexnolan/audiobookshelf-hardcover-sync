@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/api/types"
 	"github.com/drallgood/audiobookshelf-hardcover-sync/internal/database"
@@ -751,4 +752,115 @@ func (h *Handler) GetBookSyncLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeSuccessResponse(w, log)
+}
+
+// SyncScheduleEvent represents a past or future sync event
+type SyncScheduleEvent struct {
+	Time        string `json:"time"`         // ISO 8601 timestamp
+	Type        string `json:"type"`         // "past" or "future"
+	Status      string `json:"status"`       // "completed", "scheduled", "error" (for past events)
+	Description string `json:"description"`  // Human-readable description
+	EventCount  int    `json:"event_count"`  // Number of sync events (for past syncs)
+}
+
+// GetSyncSchedule handles GET /api/profiles/{id}/sync-schedule
+// Returns a timeline of past and future sync operations for a profile
+func (h *Handler) GetSyncSchedule(w http.ResponseWriter, r *http.Request) {
+	profileID := strings.TrimPrefix(r.URL.Path, "/api/profiles/")
+	profileID = strings.TrimSuffix(profileID, "/sync-schedule")
+
+	// Get profile to check if it exists and get sync interval
+	profile, err := h.multiUserService.GetProfile(profileID)
+	if err != nil {
+		h.log.Error("Failed to get profile for sync schedule", map[string]interface{}{
+			"profile_id": profileID,
+			"error":      err.Error(),
+		})
+		h.writeErrorResponse(w, http.StatusNotFound, "Profile not found")
+		return
+	}
+
+	var scheduleEvents []SyncScheduleEvent
+
+	// Get historical sync events (last 30 days)
+	repo := h.multiUserService.GetRepository()
+	events, _, err := repo.GetSyncEvents(profileID, 100, 0)
+	if err != nil {
+		h.log.Error("Failed to get sync events for schedule", map[string]interface{}{
+			"profile_id": profileID,
+			"error":      err.Error(),
+		})
+		// Continue with empty events rather than failing
+		events = []database.SyncEvent{}
+	}
+
+	// Group events by date/time and create schedule entries for past syncs
+	eventsByTime := make(map[string][]database.SyncEvent)
+	for _, event := range events {
+		// Truncate to minute precision for grouping
+		timeKey := event.CreatedAt.Truncate(1 * 60000000000).Format("2006-01-02T15:04:05Z")
+		eventsByTime[timeKey] = append(eventsByTime[timeKey], event)
+	}
+
+	// Convert grouped events to schedule events
+	for timeKey, eventsGroup := range eventsByTime {
+		status := "completed"
+		description := fmt.Sprintf("%d sync operations completed", len(eventsGroup))
+		
+		// Check if any events had errors
+		for _, evt := range eventsGroup {
+			if evt.EventType == database.SyncEventTypeError {
+				status = "error"
+				description = fmt.Sprintf("%d sync operations (%d errors)", len(eventsGroup), 1)
+				break
+			}
+		}
+
+		scheduleEvents = append(scheduleEvents, SyncScheduleEvent{
+			Time:        timeKey,
+			Type:        "past",
+			Status:      status,
+			Description: description,
+			EventCount:  len(eventsGroup),
+		})
+	}
+
+	// Calculate future sync times if sync_interval is configured
+	if profile.SyncConfig.SyncInterval != "" {
+		duration, err := time.ParseDuration(profile.SyncConfig.SyncInterval)
+		if err == nil && duration > 0 {
+			// Get last sync time from profile state
+			state, err := repo.GetSyncState(profileID)
+			var lastSync time.Time
+			if err == nil && state != nil && state.LastSync != nil {
+				lastSync = *state.LastSync
+			} else {
+				// No last sync, use current time as baseline
+				lastSync = time.Now()
+			}
+
+			// Calculate next 10 scheduled sync times
+			nextSync := lastSync.Add(duration)
+			for i := 0; i < 10; i++ {
+				// Only show future times
+				if nextSync.After(time.Now()) {
+					scheduleEvents = append(scheduleEvents, SyncScheduleEvent{
+						Time:        nextSync.Format(time.RFC3339),
+						Type:        "future",
+						Status:      "scheduled",
+						Description: fmt.Sprintf("Scheduled sync (interval: %s)", profile.SyncConfig.SyncInterval),
+						EventCount:  0,
+					})
+				}
+				nextSync = nextSync.Add(duration)
+			}
+		}
+	}
+
+	h.writeSuccessResponse(w, map[string]interface{}{
+		"profile_id":     profileID,
+		"sync_interval":  profile.SyncConfig.SyncInterval,
+		"events":         scheduleEvents,
+		"total_events":   len(scheduleEvents),
+	})
 }
