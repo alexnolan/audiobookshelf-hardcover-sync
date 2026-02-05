@@ -1,214 +1,344 @@
-# audiobookshelf-hardcover-sync
+# AudiobookShelf-Hardcover Sync
 
-[![Trivy Scan](https://github.com/drallgood/audiobookshelf-hardcover-sync/actions/workflows/trivy.yml/badge.svg)](https://github.com/drallgood/audiobookshelf-hardcover-sync/actions/workflows/trivy.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/drallgood/audiobookshelf-hardcover-sync)](https://goreportcard.com/report/github.com/drallgood/audiobookshelf-hardcover-sync)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/drallgood/audiobookshelf-hardcover-sync?label=latest%20release)](https://github.com/drallgood/audiobookshelf-hardcover-sync/releases/latest)
+[![Trivy Scan](https://github.com/alexnolan/audiobookshelf-hardcover-sync/actions/workflows/trivy.yml/badge.svg)](https://github.com/alexnolan/audiobookshelf-hardcover-sync/actions/workflows/trivy.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/alexnolan/audiobookshelf-hardcover-sync)](https://goreportcard.com/report/github.com/alexnolan/audiobookshelf-hardcover-sync)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/alexnolan/audiobookshelf-hardcover-sync?label=latest%20release)](https://github.com/alexnolan/audiobookshelf-hardcover-sync/releases/latest)
 
-> **Note:** This README reflects the latest development version. For documentation specific to the latest stable release, please check the [latest release](https://github.com/drallgood/audiobookshelf-hardcover-sync/releases/latest) on GitHub.
+> **Note**: This is a complete rewrite and enhancement of the original [drallgood/audiobookshelf-hardcover-sync](https://github.com/drallgood/audiobookshelf-hardcover-sync) project. While maintaining full backward compatibility, this fork introduces a modern web UI, multi-user support, database-driven architecture, and advanced book management features.
 
-Automatically syncs your Audiobookshelf library with Hardcover, including reading progress, book status, and ownership information.
-
-## 🎉 Multi-Profile Sync Support (v3.0.0+)
-
-**audiobookshelf-hardcover-sync** now supports multiple sync profiles with a modern web interface and secure token management!
-
-### Key Features
-
-- **🌐 Web Management Interface**: Modern, responsive web UI at `http://localhost:8080`
-- **👥 Multiple Sync Profiles**: Each profile can have individual Audiobookshelf and Hardcover tokens
-- **🔒 Secure Storage**: All API tokens encrypted at rest with AES-256-GCM
-- **🔄 Concurrent Syncing**: Multiple profiles can sync simultaneously
-- **📊 Real-Time Monitoring**: Live sync status with auto-refresh
-- **🔧 REST API**: Complete programmatic control via RESTful endpoints
-- **⬆️ Automatic Migration**: Seamless upgrade from single-profile setups
-- **🔙 Backwards Compatible**: All existing functionality preserved
-- **🚀 Cache Busting**: Automatic cache invalidation ensures profiles always get the latest UI updates
-- **📚 Book Library Management** (Development): Store-compare-sync architecture for per-book control with conflict resolution strategies
-
-### Quick Start (Multi-User)
-
-1. **Start the application with web UI enabled**:
-   ```bash
-   # Using environment variable
-   ENABLE_WEB_UI=true ./audiobookshelf-hardcover-sync --server-only
-   
-   # Using config file (recommended)
-   # Set enable_web_ui: true in your config.yaml
-   ./audiobookshelf-hardcover-sync --server-only
-   ```
-
-2. **Access the web interface**: Open `http://localhost:8080` in your browser
-
-3. **Add Sync Profiles**: Use the "Add Profile" tab to create profiles with individual tokens
-
-4. **Monitor syncs**: View real-time sync status and control operations
-
-### Migration from Single-Profile
-
-Existing single-profile setups are **automatically migrated** on first startup:
-
-- Your existing `config.yaml` is detected and backed up
-- A "Default Profile" is created with your current configuration
-- All functionality continues to work as before
-- Access the new web interface at `http://localhost:8080`
-
-### REST API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | Web management interface |
-| `GET` | `/api/profiles` | List all sync profiles |
-| `POST` | `/api/profiles` | Create new sync profile |
-| `GET` | `/api/profiles/{id}` | Get profile details |
-| `PUT` | `/api/profiles/{id}` | Update profile |
-| `DELETE` | `/api/profiles/{id}` | Delete profile |
-| `PUT` | `/api/profiles/{id}/config` | Update profile configuration |
-| `GET` | `/api/profiles/{id}/status` | Get sync status |
-| `POST` | `/api/profiles/{id}/sync` | Start sync |
-| `DELETE` | `/api/profiles/{id}/sync` | Cancel sync |
-| `POST` | `/api/profiles/{id}/purge` | Purge all data for profile (books, mappings, history) |
-| `GET` | `/api/status` | All profile statuses |
-
-### Environment Variables (Multi-Profile)
-
-| Variable | Description | Default |
-|----------|-------------|:-------:|
-| `ENCRYPTION_KEY` | Base64-encoded 32-byte encryption key (auto-generated if not set) | Auto-generated |
-| `DATA_DIR` | Directory for database and encryption files | `./data` |
-
-### Security Features
-
-- **Token Encryption**: All API tokens encrypted at rest
-- **Profile Management**: Full CRUD operations for sync profiles data
-- **Secure Key Management**: Auto-generated encryption keys
-- **Token Masking**: Sensitive data masked in API responses
-- **Directory Protection**: Static file serving with traversal protection
+Automatically synchronize your [AudiobookShelf](https://www.audiobookshelf.org/) library with [Hardcover](https://hardcover.app/), including reading progress, book status, and ownership information. Built with Go for reliability and performance.
 
 ---
 
-## Project Structure
+## ✨ What's New in This Fork
 
-The project follows standard Go project layout:
+This fork represents a **complete architectural rewrite** with major enhancements:
 
-```
-.
-├── cmd/                          # Main application entry points
-│   └── audiobookshelf-hardcover-sync/  # Main application
-├── internal/                     # Private application code
-│   ├── api/                      # Multi-user API handlers
-│   │   ├── audiobookshelf/       # Audiobookshelf API client
-│   │   ├── hardcover/            # Hardcover API client
-│   │   └── handlers.go           # REST API endpoints
-│   ├── auth/                     # Authentication system
-│   │   ├── handlers.go           # Auth HTTP handlers (login/logout)
-│   │   ├── local.go              # Local username/password provider
-│   │   ├── middleware.go         # Auth middleware and RBAC
-│   │   ├── models.go             # User, session, provider models
-│   │   ├── oidc.go               # Keycloak/OIDC provider
-│   │   ├── provider.go           # Auth provider interface
-│   │   ├── repository.go         # Database operations
-│   │   ├── service.go            # Auth service orchestration
-│   │   └── session.go            # Session management
-│   ├── config/                   # Configuration loading and validation
-│   ├── crypto/                   # Encryption utilities
-│   │   └── encryption.go         # AES-256-GCM token encryption
-│   ├── database/                 # Database layer
-│   │   ├── database.go           # Connection management
-│   │   ├── migration.go          # Single-user to multi-user migration
-│   │   ├── models.go             # User, config, sync state models
-│   │   └── repository.go         # CRUD operations
-│   ├── logger/                   # Structured logging
-│   ├── models/                   # Data structures
-│   ├── multiuser/                # Multi-user service
-│   │   └── service.go            # User management and sync orchestration
-│   ├── server/                   # HTTP server
-│   │   └── server.go             # Routing and middleware setup
-│   ├── services/                 # Business logic
-│   ├── sync/                     # Sync logic
-│   └── utils/                    # Utility functions
-├── pkg/                          # Public libraries
-│   ├── cache/                    # Caching implementation
-│   ├── edition/                  # Edition creation logic
-│   └── mismatch/                 # Mismatch detection
-├── web/                          # Web UI assets
-│   └── static/                   # Static files
-│       ├── app.js                # Multi-user management JavaScript
-│       ├── index.html            # Web dashboard
-│       ├── login.html            # Authentication login page
-│       └── styles.css            # Modern responsive styling
-├── docs/                         # Documentation
-│   ├── AUTHENTICATION.md        # Authentication setup guide
-│   └── helm-chart-publishing.md  # Helm deployment guide
-├── helm/                         # Kubernetes Helm chart
-│   └── audiobookshelf-hardcover-sync/
-└── test/                         # Test files
-    ├── testdata/                 # Test data
-    ├── unit/                     # Unit tests
-    ├── integration/              # Integration tests
-    └── e2e/                      # End-to-end tests
-```
+- 🎨 **Modern Web UI** - Beautiful, responsive interface for managing profiles and books
+- 👥 **Multi-User/Multi-Profile** - Support multiple AudiobookShelf and Hardcover accounts
+- 🗄️ **Database-Driven** - SQLite backend with GORM for robust data management
+- 📚 **Store-Compare-Sync** - Advanced book-level control with conflict resolution
+- 🔐 **Enterprise Security** - AES-256-GCM encryption, authentication (local + OIDC/Keycloak)
+- 🎯 **Per-Book Control** - Individual sync settings and conflict resolution strategies
+- 📊 **Progress Tracking** - Complete history and audit trails for all operations
+- 🚀 **REST API** - Full programmatic control via RESTful endpoints
+- ⚡ **Enhanced Performance** - Intelligent caching and incremental sync
+- 🔧 **Developer Tools** - Edition creation, image management, ID lookup utilities
 
-## Development
+All while maintaining **100% backward compatibility** with the original single-user mode.
 
-## Features
+---
 
-### 🎉 Multi-Profile Sync Support (v3.0.0+)
-- **👥 Multiple Sync Profiles**: Individual Audiobookshelf and Hardcover tokens per profile
-- **🌐 Web Interface**: Modern, responsive management dashboard at `http://localhost:8080`
-- **🔒 Secure Storage**: AES-256-GCM encrypted token storage
-- **🔄 Concurrent Syncing**: Multiple users can sync simultaneously
-- **📊 Real-Time Monitoring**: Live sync status with auto-refresh
-- **🔧 REST API**: Complete programmatic control via RESTful endpoints
-- **⬆️ Automatic Migration**: Seamless upgrade from single-user setups
-- **🔙 Backwards Compatible**: All existing functionality preserved
+## 🌟 Key Features
 
-### 📚 Core Sync Features
-- **Full Library Sync**: Syncs your entire Audiobookshelf library with Hardcover
-- **Smart Status Management**: Automatically sets "Want to Read", "Currently Reading", and "Read" status based on progress
-- **Ownership Tracking**: Marks synced books as "owned" to distinguish from wishlist items
-- **Incremental Sync**: Efficient state-based syncing to only process changed books
-  - Tracks sync state between runs
-  - Configurable minimum change threshold
-  - Persistent state storage
-- **Smart Caching**: Intelligent caching of author/narrator lookups with cross-role discovery
-- **Enhanced Progress Detection**: Uses `/api/me` endpoint for accurate finished book detection, preventing false re-read scenarios
+### 🎯 Core Sync Capabilities
+- **Automatic Progress Sync** - Keep your reading progress synchronized across platforms
+- **Smart Status Management** - Automatically sets "Want to Read", "Currently Reading", and "Read" status
+- **Ownership Tracking** - Marks synced books as "owned" in Hardcover
+- **Incremental Sync** - Efficient state-based syncing processes only changed books
+- **DNF Preservation** - Respects "Did Not Finish" status in Hardcover
+- **Finished Book Detection** - Accurate completion tracking with date preservation
+- **Library Filtering** - Include/exclude specific AudiobookShelf libraries
+- **Collection Support** - Filter by AudiobookShelf collections
 
-### 🔧 Operations & Management
-- **Periodic Sync**: Configurable automatic syncing (e.g., every 10 minutes or 1 hour)
-- **Manual Sync**: HTTP endpoints for on-demand synchronization
-- **Health Monitoring**: Built-in health check endpoint
-- **Configurable Logging**: JSON or console (human-readable) output with configurable log levels
+### 🌐 Web Interface & Multi-User
+- **Modern Dashboard** - Intuitive web UI at `http://localhost:8080`
+- **Profile Management** - Create and manage multiple sync profiles
+- **Book Library View** - Side-by-side comparison of AudiobookShelf vs Hardcover progress
+- **Real-Time Status** - Live sync monitoring with auto-refresh
+- **Batch Operations** - Sync multiple books simultaneously
+- **Manual Mapping** - Override automatic book matching when needed
+- **Progress History** - View complete sync history per book
+- **Sync Configuration** - Per-profile and per-book sync settings
+
+### 🔒 Security & Authentication
+- **Token Encryption** - AES-256-GCM encryption for API tokens at rest
+- **Local Authentication** - Username/password with bcrypt hashing
+- **OIDC/Keycloak** - Enterprise SSO integration
+- **Role-Based Access** - Admin, User, and Viewer roles
+- **Session Management** - Secure session handling with CSRF protection
+- **Optional Auth** - Can run without authentication for home use
+
+### 🎨 Advanced Features
+- **Conflict Resolution** - Multiple strategies: prefer ABS, prefer Hardcover, prefer newest, manual review
+- **Smart Matching** - Automatic book matching by ASIN, ISBN, or title/author
+- **Progress Threshold** - Configurable "in sync" detection (default 1% difference)
+- **Audit Trail** - Complete history of all sync operations
+- **Dry Run Mode** - Test syncs without making changes
+- **Rate Limiting** - Respects Hardcover API limits (60 req/min)
+- **Multi-Database** - SQLite (default), PostgreSQL, MySQL/MariaDB support
 
 ### 🛠️ Developer Tools
-- **Edition Creation Tools**: Interactive tools for creating missing audiobook editions
-- **ID Lookup**: Search and verify author, narrator, and publisher IDs from Hardcover database
-- **Container Ready**: Multi-arch Docker images (amd64, arm64)
-- **Production Ready**: Secure, minimal, and battle-tested
+- **edition-tool** - Interactive tool for creating missing audiobook editions on Hardcover
+- **image-tool** - Cover image management and upload utility
+- **hardcover-lookup** - Search and verify author, narrator, publisher IDs
+- **REST API** - Full programmatic control via `/api/*` endpoints
+- **GraphQL Client** - Direct Hardcover GraphQL API integration
 
-## Quick Start
+---
 
-### Prerequisites
+## 🚀 Quick Start
 
-- Go 1.21 or later
-- Docker (optional, for containerized deployment)
-- Audiobookshelf instance with API access
-- Hardcover API token
+### Option 1: Docker (Recommended)
 
-### Local Development
+The fastest way to get started with the web UI and multi-user support:
 
-1. Clone the repository:
-   ```sh
-   git clone https://github.com/drallgood/audiobookshelf-hardcover-sync.git
+```bash
+# Create directories
+mkdir -p ~/audiobookshelf-hardcover-sync/{config,data}
+cd ~/audiobookshelf-hardcover-sync
+
+# Create docker-compose.yml
+cat > docker-compose.yml <<'EOF'
+version: '3.8'
+
+services:
+  audiobookshelf-hardcover-sync:
+    image: ghcr.io/drallgood/audiobookshelf-hardcover-sync:latest
+    container_name: abs-hardcover-sync
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/app/config
+      - ./data:/data
+    environment:
+      - ENABLE_WEB_UI=true
+      - LOG_LEVEL=info
+      - DATABASE_PATH=/data/audiobookshelf-hardcover-sync.db
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+EOF
+
+# Start the service
+docker compose up -d
+
+# View logs
+docker compose logs -f
+```
+
+**Access the web interface** at `http://localhost:8080` and create your first sync profile!
+
+### Option 2: Docker CLI
+
+```bash
+docker run -d \
+  --name abs-hardcover-sync \
+  -p 8080:8080 \
+  -v $(pwd)/config:/app/config \
+  -v $(pwd)/data:/data \
+  -e ENABLE_WEB_UI=true \
+  ghcr.io/drallgood/audiobookshelf-hardcover-sync:latest
+```
+
+### Option 3: Binary Installation
+
+1. **Download the latest release** from [GitHub Releases](https://github.com/alexnolan/audiobookshelf-hardcover-sync/releases)
+
+2. **Extract and configure**:
+   ```bash
+   tar -xzf audiobookshelf-hardcover-sync-*.tar.gz
    cd audiobookshelf-hardcover-sync
+   cp config.example.yaml config.yaml
+   # Edit config.yaml with your settings
    ```
 
-2. Install dependencies:
-   ```sh
-   make deps
+3. **Run with web UI enabled**:
+   ```bash
+   ENABLE_WEB_UI=true ./audiobookshelf-hardcover-sync --server-only
    ```
 
-3.### Configuration
+4. **Access the dashboard** at `http://localhost:8080`
+
+### Option 4: Legacy Single-User Mode
+
+For backward compatibility with the original version:
+
+```bash
+# Configure via config.yaml or environment variables
+export AUDIOBOOKSHELF_URL="https://your-abs-instance.com"
+export AUDIOBOOKSHELF_TOKEN="your-abs-token"
+export HARDCOVER_TOKEN="your-hardcover-token"
+
+# Run sync
+./audiobookshelf-hardcover-sync
+```
+
+---
+
+## 📖 Usage Guide
+
+### Using the Web Interface (Recommended)
+
+1. **Create a Profile**
+   - Navigate to the "Add Profile" tab
+   - Enter a profile name (e.g., "My Books")
+   - Add your AudiobookShelf URL and token
+   - Add your Hardcover API token
+   - Configure sync settings (conflict resolution, intervals, etc.)
+   - Click "Create Profile"
+
+2. **Manage Your Library**
+   - Switch to the "Matching" tab
+   - Select your profile from the dropdown
+   - Click "Collect ABS Books" to fetch your AudiobookShelf library
+   - Click "Collect Hardcover Books" to fetch your Hardcover progress
+   - View side-by-side comparison of progress across platforms
+   - Books are color-coded:
+     - 🟢 Green: In sync (< 1% difference)
+     - 🟡 Yellow: Minor difference (1-5%)
+     - 🔴 Red: Major difference (> 5%)
+     - ⚪ Gray: Not matched to Hardcover
+
+3. **Sync Books**
+   - Click "Sync All" to sync all books
+   - Or use checkboxes to select specific books and click "Sync Selected"
+   - Click on any book row to view detailed progress history
+   - Configure per-book sync settings via the settings icon
+
+4. **Monitor Progress**
+   - Check the "Sync Status" tab for real-time sync operations
+   - View "Book Sync Logs" for historical sync events
+   - Each profile syncs independently
+
+### Using the REST API
+
+The application provides a comprehensive REST API for programmatic control:
+
+#### Profile Management
+```bash
+# List all profiles
+curl http://localhost:8080/api/profiles
+
+# Create a new profile
+curl -X POST http://localhost:8080/api/profiles \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Profile",
+    "audiobookshelf_url": "https://abs.example.com",
+    "audiobookshelf_token": "your-token",
+    "hardcover_token": "your-token",
+    "conflict_resolution": "prefer_abs",
+    "sync_interval": "1h"
+  }'
+
+# Update a profile
+curl -X PUT http://localhost:8080/api/profiles/{id} \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Updated Name"}'
+
+# Delete a profile
+curl -X DELETE http://localhost:8080/api/profiles/{id}
+```
+
+#### Sync Operations
+```bash
+# Start sync for a profile
+curl -X POST http://localhost:8080/api/profiles/{id}/sync
+
+# Get sync status
+curl http://localhost:8080/api/profiles/{id}/status
+
+# Cancel running sync
+curl -X DELETE http://localhost:8080/api/profiles/{id}/sync
+
+# Purge all data for a profile (books, mappings, history)
+curl -X POST http://localhost:8080/api/profiles/{id}/purge
+```
+
+#### Book Management
+```bash
+# List books for a profile
+curl http://localhost:8080/api/profiles/{id}/books
+
+# Get specific book details
+curl http://localhost:8080/api/profiles/{id}/books/{absBookId}
+
+# Sync a single book
+curl -X POST http://localhost:8080/api/profiles/{id}/books/{absBookId}/sync
+
+# Sync multiple books
+curl -X POST http://localhost:8080/api/profiles/{id}/books/sync-batch \
+  -H "Content-Type: application/json" \
+  -d '{"abs_book_ids": ["book1", "book2"]}'
+
+# Get book sync history
+curl http://localhost:8080/api/profiles/{id}/books/{absBookId}/history
+
+# Manually map a book to Hardcover edition
+curl -X POST http://localhost:8080/api/profiles/{id}/books/{absBookId}/map \
+  -H "Content-Type: application/json" \
+  -d '{"hardcover_edition_id": 12345, "confidence": 100}'
+```
+
+#### Collection Operations
+```bash
+# Collect AudiobookShelf books
+curl -X POST http://localhost:8080/api/profiles/{id}/collect/abs
+
+# Collect Hardcover books
+curl -X POST http://localhost:8080/api/profiles/{id}/collect/hardcover
+```
+
+For complete API documentation, see the [OpenAPI specification](docs/openapi.yaml).
+
+### Using Developer Tools
+
+#### Edition Tool - Create Missing Audiobook Editions
+
+```bash
+# Interactive mode
+./edition-tool
+
+# With pre-filled data
+./edition-tool \
+  --title "The Hobbit" \
+  --authors "J.R.R. Tolkien" \
+  --narrators "Andy Serkis" \
+  --publisher "HarperCollins" \
+  --asin "B09B6QWPQJ" \
+  --duration 11.08
+```
+
+#### Image Tool - Upload Cover Images
+
+```bash
+# Upload a cover image for an edition
+./image-tool \
+  --edition-id 12345 \
+  --image-path ./covers/book.jpg \
+  --hardcover-token "your-token"
+```
+
+#### Hardcover Lookup - Search IDs
+
+```bash
+# Search for an author
+./hardcover-lookup author "J.R.R. Tolkien"
+
+# Search for a narrator
+./hardcover-lookup narrator "Andy Serkis"
+
+# Search for a publisher
+./hardcover-lookup publisher "HarperCollins"
+```
+
+---
+
+## ⚙️ Configuration
+
+### Configuration Methods
+
+The application supports three configuration methods (in order of precedence):
+
+1. **Environment Variables** - Highest priority
+2. **Config File** (`config.yaml`) - Standard configuration
+3. **Web UI** - Profile-specific settings (for multi-user mode)
+
+### Configuration File
 
 Create a `config.yaml` file based on the example:
 
@@ -216,681 +346,820 @@ Create a `config.yaml` file based on the example:
 cp config.example.yaml config.yaml
 ```
 
-Edit the configuration to match your environment. See [Configuration Reference](#configuration-reference) for all available options.
-
-#### Important Configuration Changes
-
-> **Deprecation Notice**: The `app` section in the configuration is now deprecated and will be removed in a future version. Please migrate to the new `sync` section.
-
-**Migrating from old configuration (app.*) to new configuration (sync.*):**
-
-```yaml
-# Old deprecated format (app.*):
-# app:
-#   sync_interval: "1h"
-#   minimum_progress: 0.01
-#   sync_want_to_read: true
-#   sync_owned: false
-#   dry_run: false
-
-# New format (sync.*):
-sync:
-  sync_interval: "1h"
-  minimum_progress: 0.01
-  sync_want_to_read: true
-  sync_owned: false
-  dry_run: false
-  # Other sync settings...
-```
-
-The application will automatically migrate settings from the old `app` section to the new `sync` section and log a warning if any deprecated settings are found.
-
-4. Build and run the application:
-   ```sh
-   make build
-   ./bin/audiobookshelf-hardcover-sync
-   ```
-
-## Running with Docker
-
-### Prerequisites
-
-- [Docker](https://docs.docker.com/engine/install/) installed on your system
-- [Docker Compose](https://docs.docker.com/compose/install/) (recommended for the main sync service)
-- [Hardcover API token](#getting-started)
-- (Optional) [Audiobookshelf](https://www.audiobookshelf.org/) URL and token if using the sync service
-
-
-### Main Sync Service
-
-#### Using Docker Compose (Recommended)
-
-1. **Create a project directory** and navigate to it:
-   ```bash
-   mkdir -p ~/abs-hardcover-sync && cd ~/abs-hardcover-sync
-   ```
-
-2. **Create a docker-compose.yml** file:
-   ```yaml
-   version: '3.8'
-
-   services:
-     audiobookshelf-hardcover-sync:
-       image: ghcr.io/drallgood/audiobookshelf-hardcover-sync:latest
-       container_name: abs-hardcover-sync
-       restart: unless-stopped
-       volumes:
-         - ./config:/app/config # For configuration files
-         - ./data:/app/data # For persistent storage and state
-         - ./logs:/app/logs # For log files (optional)
-       # Optional environment variables (config file takes precedence)
-       environment:
-         - CONFIG_PATH=/app/config/config.yaml
-         - LOG_LEVEL=info
-       healthcheck:
-         test: ["CMD", "wget", "--spider", "http://localhost:8080/healthz"]
-         interval: 30s
-         timeout: 10s
-         retries: 3
-         start_period: 10s
-   ```
-
-3. **Create a config directory and config.yaml file**:
-   ```bash
-   mkdir -p config && touch config/config.yaml
-   ```
-   
-4. **Add your configuration to config.yaml**:
-   ```yaml
-   audiobookshelf:
-     url: https://your-abs-server.com
-     token: your_abs_token
-
-   hardcover:
-     token: your_hardcover_token
-
-   sync:
-     interval: 10m
-     state_file: /app/data/sync_state.json
-
-   logging:
-     level: info
-     format: json # or text for improved readability during development
-   ```
-
-5. **Create data directories**:
-   ```bash
-   mkdir -p data logs
-   ```
-
-6. **Start the service**:
-   ```bash
-   docker compose up -d
-   ```
-
-7. **View logs**:
-   ```bash
-   # Follow logs
-   docker compose logs -f
-   
-   # View recent logs (last 100 lines)
-   docker compose logs --tail=100
-   
-   # View logs for a specific time period
-   docker compose logs --since 1h
-   ```
-
-8. **Common management commands**:
-   ```bash
-   # Stop the service
-   docker compose down
-   
-   # Restart the service
-   docker compose restart
-   
-   # Update to the latest version
-   docker compose pull
-   docker compose up -d --force-recreate
-   ```
-
-#### Using Helm (Kubernetes)
-
-For Kubernetes deployments, use the official Helm chart:
-
-1. **Add the Helm repository**:
-   ```bash
-# Stable releases (from main)
-helm repo add audiobookshelf-hardcover-sync \
-  https://drallgood.github.io/audiobookshelf-hardcover-sync/stable
-
-# Dev channel (from develop)
-helm repo add audiobookshelf-hardcover-sync-dev \
-  https://drallgood.github.io/audiobookshelf-hardcover-sync/dev
-helm repo update
-```
-
-2. **Create a values file** with your configuration:
-   ```yaml
-   # my-values.yaml
-   secrets:
-     audiobookshelf:
-       url: "https://your-audiobookshelf-instance.com"
-       token: "your-audiobookshelf-token"
-     hardcover:
-       token: "your-hardcover-token"
-   
-   # Optional: Enable persistence
-   persistence:
-     enabled: true
-     size: 2Gi
-   
-   # Optional: Configure resources
-   resources:
-     limits:
-       cpu: 500m
-       memory: 512Mi
-     requests:
-       cpu: 100m
-       memory: 128Mi
-   ```
-
-3. **Install the chart (stable)**:
-   ```bash
-helm install my-sync audiobookshelf-hardcover-sync/audiobookshelf-hardcover-sync -f my-values.yaml
-```
-
-3b. **Install the chart (dev)**:
-
-```bash
-helm install my-sync-dev audiobookshelf-hardcover-sync-dev/audiobookshelf-hardcover-sync -f my-values.yaml
-```
-
-4. **Check the deployment**:
-   ```bash
-   kubectl get pods -l app.kubernetes.io/name=audiobookshelf-hardcover-sync
-   kubectl logs -l app.kubernetes.io/name=audiobookshelf-hardcover-sync -f
-   ```
-
-5. **Upgrade the deployment**:
-   ```bash
-   helm upgrade my-sync audiobookshelf-hardcover-sync/audiobookshelf-hardcover-sync -f my-values.yaml
-   ```
-
-For detailed Helm chart configuration options, see the [Helm Chart Documentation](docs/helm-chart-publishing.md).
-
-## Authentication
-
-Version 3.0.0 introduces optional authentication support for securing the web UI and API endpoints.
-
-### Quick Start
-
-To enable authentication with a default admin user:
-
-```bash
-# Enable authentication
-export AUTH_ENABLED=true
-
-# Set session secret (required)
-export AUTH_SESSION_SECRET="your-secure-random-secret-key-here"
-
-# Optional: Configure default admin user
-export AUTH_DEFAULT_ADMIN_USERNAME="admin"
-export AUTH_DEFAULT_ADMIN_EMAIL="admin@localhost"
-export AUTH_DEFAULT_ADMIN_PASSWORD="changeme"
-```
-
-After enabling authentication:
-1. Access the web UI at `http://localhost:8080`
-2. Login with the default admin credentials
-3. **Important**: Change the default password immediately!
-
-### Authentication Providers
-
-#### Local Authentication
-- Username/password with bcrypt hashing
-- Secure session management
-- Role-based access control
-
-#### Keycloak/OIDC Integration
-- OpenID Connect support
-- Automatic user provisioning
-- Role mapping from JWT claims
-
-```bash
-# Keycloak configuration
-export KEYCLOAK_ISSUER="https://your-keycloak.example.com/realms/your-realm"
-export KEYCLOAK_CLIENT_ID="audiobookshelf-hardcover-sync"
-export KEYCLOAK_CLIENT_SECRET="your-client-secret"
-export KEYCLOAK_REDIRECT_URI="https://your-app.example.com/auth/callback/oidc"
-```
-
-### User Roles
-
-- **Admin**: Full access, user management, system configuration
-- **User**: Sync functionality, personal configurations
-- **Viewer**: Read-only access to sync status
-
-### Security Features
-
-- HTTP-only secure cookies
-- CSRF protection
-- Session expiration and cleanup
-- Password strength validation
-- Token encryption at rest
-
-For detailed authentication setup and configuration, see the [Authentication Guide](docs/AUTHENTICATION.md).
-
-### Configuration Reference
-
-#### Configuration File (Recommended)
-
-Version 2.0.0 introduces a YAML configuration file as the primary way to configure the application:
+#### Essential Settings
 
 ```yaml
 # Server configuration
 server:
   port: "8080"
-  shutdown_timeout: "10s"  # Graceful shutdown timeout
+  enable_web_ui: true  # Enable web UI for multi-user mode
 
-# Rate limiting configuration
+# Rate limiting (respect Hardcover API limits)
 rate_limit:
-  rate: "1500ms"        # Minimum time between requests (e.g., 1500ms for ~40 requests per minute)
-  burst: 2              # Maximum number of requests in a burst
-  max_concurrent: 3     # Maximum number of concurrent requests
+  rate: "1500ms"       # ~40 requests per minute
+  burst: 2
+  max_concurrent: 3
 
-# Logging configuration
+# Logging
 logging:
-  level: "info"   # debug, info, warn, error, fatal, panic
-  format: "json"  # json or console
+  level: "info"        # debug, info, warn, error
+  format: "console"    # console or json
 
-# Audiobookshelf configuration
-audiobookshelf:
-  url: "https://your-audiobookshelf-instance.com"
-  token: "your-audiobookshelf-token"
-
-# Hardcover configuration
-hardcover:
-  # Base URL for the Hardcover GraphQL API. Defaults to the official endpoint
-  # https://api.hardcover.app/v1/graphql. Override if/when self-hosting is supported.
-  # Can also be set via HARDCOVER_BASE_URL environment variable.
-  base_url: ""
-  token: "your-hardcover-token"
-
-# Sync settings
-sync:
-  sync_interval: "1h"
-  minimum_progress: 0.01  # Minimum progress threshold (0.0 to 1.0)
-  sync_want_to_read: true  # Sync books with 0% progress as "Want to Read"
-  sync_owned: true        # Mark synced books as owned in Hardcover
-  include_ebooks: false    # Include items with media type "ebook" in sync
-  process_unread_books: false  # Process books with 0% progress for mismatches and want-to-read status
-  preserve_dnf: true      # Preserve books marked as "Did Not Finish" in Hardcover
-  mismatch_output_dir: "./mismatches"  # Directory to store mismatch JSON files
-  dry_run: false           # Enable dry run mode (no changes will be made)
-  test_book_filter: ""    # Filter books by title for testing
-  test_book_limit: 0       # Limit number of books to process for testing (0 = no limit)
-
-# Application settings (deprecated - use sync section above)
-app:
-  # Deprecated: These settings are moved to the 'sync' section and will be removed in a future version
-  sync_want_to_read: true  # Deprecated: Use sync.sync_want_to_read
-  sync_owned: true        # Deprecated: Use sync.sync_owned
-  dry_run: false          # Deprecated: Use sync.dry_run
-
-# Database configuration
+# Database (SQLite default)
 database:
-  # Database type: sqlite, postgresql, mysql, mariadb
   type: "sqlite"
-  
-  # SQLite configuration (default)
-  path: ""  # Uses default path if empty: ./data/database.db
-  
-  # Connection pool settings
-  connection_pool:
-    max_open_conns: 25      # Maximum number of open connections
-    max_idle_conns: 5       # Maximum number of idle connections
-    conn_max_lifetime: 60   # Connection lifetime in minutes
+  path: "./data/database.db"
 
-# Authentication Configuration
+# Authentication (optional)
 authentication:
-  enabled: false
-  
-  # Session configuration
+  enabled: false       # Set to true for multi-user with auth
   session:
-    secret: ""  # Auto-generated if empty
-    cookie_name: "audiobookshelf-sync-session"
-    max_age: 86400  # Session max age in seconds (24 hours)
-    secure: false   # Set to true for HTTPS
-    http_only: true
-    same_site: "Lax"
-  
-  # Default admin user (created if auth is enabled)
+    secret: ""         # Auto-generated if empty
+    max_age: 86400     # 24 hours
   default_admin:
     username: "admin"
     email: "admin@localhost"
-    password: ""  # Set via AUTH_DEFAULT_ADMIN_PASSWORD env var
-  
-  # Keycloak/OIDC authentication (optional)
+    password: ""       # Required if auth enabled
+  # Optional: Keycloak/OIDC
   keycloak:
     enabled: false
     issuer: ""
     client_id: ""
-    client_secret: ""  # Set via environment variable
-    redirect_uri: "http://localhost:8080/auth/callback"
-    scopes: "openid profile email"
-    role_claim: "realm_access.roles"
+    client_secret: ""
+```
+
+#### Single-User Legacy Settings
+
+For backward compatibility with the original project:
+
+```yaml
+# AudiobookShelf connection
+audiobookshelf:
+  url: "https://your-audiobookshelf-instance.com"
+  token: "your-audiobookshelf-token"
+
+# Hardcover connection
+hardcover:
+  token: "your-hardcover-token"
 
 # Sync configuration
 sync:
-  incremental: true
-  state_file: "./data/sync_state.json"
-  min_change_threshold: 60  # seconds
-  libraries:  # Optional library filtering
-    include: ["Audiobooks"]  # Only sync these libraries
-    exclude: ["Podcasts"]    # Exclude these libraries (include takes precedence)
-
-# Paths configuration
-paths:
-  data_dir: "./data"      # Base directory for application data
-  cache_dir: "./cache"    # Directory for cache files
-  mismatch_output_dir: "./mismatches"  # Directory for mismatch reports
-```
-
-#### Environment Variables
-
-**Multi-User Mode (v3.0.0+)** - Recommended:
-
-| Variable | Description | Default | Example |
-|----------|-------------|:-------:|---------|
-| `ENCRYPTION_KEY` | Base64-encoded 32-byte encryption key | Auto-generated | `base64-encoded-key` |
-| `DATA_DIR` | Directory for database and encryption files | `./data` | `/app/data` |
-| `LOG_LEVEL` | Logging level | `info` | `debug`, `warn`, `error` |
-| `LOG_FORMAT` | Log output format | `json` | `json`, `text` |
-| `HARDCOVER_BASE_URL` | Hardcover GraphQL API base URL | `https://api.hardcover.app/v1/graphql` | `https://api.hardcover.app/v1/graphql` |
-| `RATE_LIMIT_RATE` | Minimum time between Hardcover API requests | unset | `1500ms`, `2s` |
-| `RATE_LIMIT_BURST` | Max burst size for requests | unset | `2` |
-| `RATE_LIMIT_MAX_CONCURRENT` | Max concurrent requests | unset | `3` |
-
-**Single-User Mode (Legacy)** - For backwards compatibility (web UI disabled):
-
-### Configuration Modes
-
-The application supports two distinct operating modes controlled by the `enable_web_ui` configuration option:
-
-#### Web UI Mode (Multi-User) - `enable_web_ui: true`
-- **Modern web interface** at `http://localhost:8080`
-- **Multi-user support** with individual token management
-- **REST API** for programmatic access
-- **Real-time monitoring** and control
-- **No token requirements** at startup (tokens configured via web UI)
-
-#### Single-User Mode (Legacy) - `enable_web_ui: false` (default)
-- **Backward compatible** with existing setups
-- **Environment variable/configuration file** based token management
-- **No web interface** - runs as a service only
-- **Requires tokens** at startup via environment variables or config file
-
-> Note: In both single-user and multi-user modes, the Hardcover client is created with a unified configuration (NewClientWithConfig), honoring `hardcover.base_url` and `rate_limit.*` settings.
-
-### Configuration Options
-
-#### Environment Variables
-- `ENABLE_WEB_UI`: Enable/disable web UI (`true`/`false`, default: `false`)
-- `AUDIOBOOKSHELF_URL`: Audiobookshelf server URL (required)
-- `AUDIOBOOKSHELF_TOKEN`: Audiobookshelf API token (required for single-user mode)
-- `HARDCOVER_TOKEN`: Hardcover API token (required for single-user mode)
-
-#### Config File
-```yaml
-server:
-  port: 8080
-  enable_web_ui: true  # Enable web UI for multi-user mode
-  shutdown_timeout: 30s
-
-# Single-user mode (when enable_web_ui: false)
-audiobookshelf:
-  url: "https://audiobookshelf.example.com"
-  token: "your-audiobookshelf-token"
-
-hardcover:
-  token: "your-hardcover-token"
-```
-
-| Variable | Description | Maps to config | Notes |
-|----------|-------------|----------------|-------|
-| `CONFIG_PATH` | Path to config file | - | `./config.yaml` |
-| `AUDIOBOOKSHELF_URL` | URL of your AudiobookShelf instance | `audiobookshelf.url` | Legacy mode only |
-| `AUDIOBOOKSHELF_TOKEN` | AudiobookShelf API token | `audiobookshelf.token` | Legacy mode only |
-| `HARDCOVER_TOKEN` | Hardcover API token | `hardcover.token` | Legacy mode only |
-| `HARDCOVER_BASE_URL` | Hardcover API base URL | `hardcover.base_url` | Override default endpoint |
-| `RATE_LIMIT_RATE` | Min time between requests | `rate_limit.rate` | e.g. `1500ms` (≈40 rpm) |
-| `RATE_LIMIT_BURST` | Burst size | `rate_limit.burst` | e.g. `2` |
-| `RATE_LIMIT_MAX_CONCURRENT` | Max concurrent requests | `rate_limit.max_concurrent` | e.g. `3` |
-| `SYNC_INTERVAL` | Time between automatic syncs | `sync.sync_interval` | Legacy mode only |
-| `SYNC_INCLUDE_EBOOKS` | Include items with media type "ebook" | `sync.include_ebooks` | Legacy mode only |
-| `SYNC_LIBRARIES_INCLUDE` | Comma-separated list of libraries to include | `sync.libraries.include` | Legacy mode only |
-| `SYNC_LIBRARIES_EXCLUDE` | Comma-separated list of libraries to exclude | `sync.libraries.exclude` | Legacy mode only |
-
-> **💡 Tip**: For new installations, use the multi-user web interface instead of environment variables. Legacy environment variables are automatically migrated to the multi-user database on first startup.
-
-#### Volume Mounts
-
-| Container Path | Recommended Host Path | Description |
-|----------------|----------------------|-------------|
-| `/app/config` | `./config` | Configuration files |
-| `/app/data` | `./data` | Persistent data (cache, database, sync state) |
-| `/app/logs` | `./logs` | Application logs |
-| `/tmp` | - | Temporary file storage |
-
-#### Health Check Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/healthz` | GET | Basic health status |
-| `/ready` | GET | Service readiness |
-| `/metrics` | GET | Prometheus metrics |
-
-## Library Filtering
-
-The sync service supports filtering which AudioBookShelf libraries to sync. This is useful when you have multiple libraries (e.g., Audiobooks, Podcasts, Magazines) but only want to sync specific ones to Hardcover.
-
-### Configuration Examples
-
-#### Include Only Specific Libraries
-Sync only "Audiobooks" and "Fiction" libraries:
-
-```yaml
-sync:
+  sync_interval: "1h"
+  minimum_progress: 0.01       # Skip books with < 1% progress
+  sync_want_to_read: true      # Sync 0% books as "Want to Read"
+  sync_owned: true             # Mark synced books as owned
+  preserve_dnf: true           # Don't overwrite DNF status
+  include_ebooks: false        # Skip ebooks by default
+  incremental: true            # Only sync changed books
+  min_change_threshold: 60     # Minimum 60s change to trigger sync
+  dry_run: false               # Set true to test without changes
+  
+  # Library filtering
   libraries:
-    include: ["Audiobooks", "Fiction"]
+    include: []                # Include only these (empty = all)
+    exclude: []                # Exclude these (empty = none)
 ```
 
-#### Exclude Specific Libraries
-Sync all libraries except "Magazines" and "Podcasts":
+### Environment Variables
 
-```yaml
-sync:
-  libraries:
-    exclude: ["Magazines", "Podcasts"]
-```
+All settings can be overridden via environment variables:
 
-#### Using Library IDs
-You can also use library IDs instead of names:
-
-```yaml
-sync:
-  libraries:
-    include: ["lib_abc123", "lib_def456"]
-```
-
-### Environment Variable Examples
-
-#### Include Only Audiobooks
+#### Core Settings
 ```bash
-SYNC_LIBRARIES_INCLUDE="Audiobooks"
+# Server
+export SERVER_PORT=8080
+export ENABLE_WEB_UI=true
+export LOG_LEVEL=info
+
+# Database
+export DATABASE_TYPE=sqlite
+export DATABASE_PATH=/data/database.db
+
+# Encryption (multi-user mode)
+export ENCRYPTION_KEY=base64-encoded-32-byte-key
+export DATA_DIR=/data
 ```
 
-#### Exclude Multiple Libraries
+#### Legacy Single-User Mode
 ```bash
-SYNC_LIBRARIES_EXCLUDE="Magazines,Podcasts,Children's Books"
+# AudiobookShelf
+export AUDIOBOOKSHELF_URL=https://abs.example.com
+export AUDIOBOOKSHELF_TOKEN=your-token
+
+# Hardcover
+export HARDCOVER_TOKEN=your-token
+
+# Sync settings
+export SYNC_INTERVAL=1h
+export SYNC_WANT_TO_READ=true
+export SYNC_OWNED=true
+export PRESERVE_DNF=true
+export INCLUDE_EBOOKS=false
+export DRY_RUN=false
 ```
 
-### Important Notes
-
-- **Include takes precedence**: If both `include` and `exclude` are specified, only the `include` list is used
-- **Case-insensitive matching**: Library names are matched case-insensitively
-- **ID matching**: You can use either library names or library IDs
-- **Comma-separated**: When using environment variables, separate multiple libraries with commas
-- **Default behavior**: If no filtering is configured, all libraries are synced
-
-### Finding Your Library Names
-
-To find your library names, check your AudioBookShelf web interface or look at the sync logs when filtering is disabled. The service will log all discovered libraries at the start of each sync.
-
-## Recent Updates & Migration
-
-### v2.0.0 (Latest)
-- **Major Rewrite**: Complete architectural overhaul for improved stability and maintainability
-- **New**: YAML configuration file support (replaces environment variables)
-- **Enhanced**: GraphQL client for Hardcover API interactions
-- **Improved**: Incremental sync with better state management
-- **New**: Comprehensive logging system with multiple format options
-- **Enhanced**: Edition information now properly handles "Unabridged" and source-specific formats
-- **Added**: Health monitoring and metrics
-- **Fixed**: Multiple issues with book matching and progress tracking
-
-See the [CHANGELOG.md](CHANGELOG.md) for complete details and the [MIGRATION.md](MIGRATION.md) guide for upgrading from previous versions.
-
-### Migration Notes
-- **From v1.x to v2.0.0**: Major breaking changes - refer to [MIGRATION.md](MIGRATION.md)
-  - Configuration now uses YAML files (environment variables still supported but limited)
-  - Several environment variables have been renamed or removed
-  - Docker setup requires volume mapping for persistent configuration
-  - New logging system with configurable formats
-- **Reverse Proxy Users**: Review the new config.yaml path settings
-
-## Command Line Tools
-
-The project includes several utility tools to help with specific tasks:
-
-### Edition Tool
-
-The `edition-tool` helps create and manage audiobook editions in Hardcover.
-
+#### Authentication (Optional)
 ```bash
-# Build the tool
-make build-tools
+export AUTH_ENABLED=true
+export AUTH_DEFAULT_ADMIN_PASSWORD=secure-password
+export AUTH_SESSION_SECRET=random-secret-key
 
-# Show help
-./bin/edition-tool help
-
-# Create an edition interactively
-./bin/edition-tool create --interactive
-
-# Create an edition prepopulated with data from Hardcover
-./bin/edition-tool create --prepopulated
-
-# Create an edition from a JSON template file
-./bin/edition-tool create --file path/to/edition-template.json
+# Keycloak/OIDC (optional)
+export AUTH_KEYCLOAK_ENABLED=true
+export AUTH_KEYCLOAK_ISSUER=https://keycloak.example.com/realms/myrealm
+export AUTH_KEYCLOAK_CLIENT_ID=audiobookshelf-sync
+export AUTH_KEYCLOAK_CLIENT_SECRET=your-secret
 ```
 
-### Image Tool
+### Getting API Tokens
 
-The `image-tool` allows you to upload and attach cover images to books and editions in Hardcover.
+#### AudiobookShelf Token
 
-```bash
-# Upload an image to a book
-./bin/image-tool upload --url "https://example.com/cover.jpg" --book "hardcover-book-id" 
+1. Open your AudiobookShelf instance
+2. Go to **Settings → Users → Your User**
+3. Scroll to **API Token** section
+4. Click **Generate New Token**
+5. Copy the token
 
-# Upload an image to an edition
-./bin/image-tool upload --url "https://example.com/cover.jpg" --edition "hardcover-edition-id" --description "Audiobook Cover"
+#### Hardcover Token
 
-# Using a custom config file
-./bin/image-tool --config /path/to/config.yaml --url "https://example.com/cover.jpg" --book "hardcover-book-id"
-```
-
-### Hardcover Lookup
-
-The `hardcover-lookup` tool helps you search and verify author, narrator, and publisher information in Hardcover.
-
-```bash
-# Look up an author
-./bin/hardcover-lookup author "Stephen King"
-
-# Look up a narrator with JSON output
-./bin/hardcover-lookup narrator "Neil Gaiman" --json
-
-# Look up a publisher with custom results limit
-./bin/hardcover-lookup publisher "Penguin Random House" --limit 10
-
-# Get help for a specific command
-./bin/hardcover-lookup help author
-```
-
-## Troubleshooting
-
-### Common Issues
-
-#### Configuration Issues
-If you're experiencing issues with configuration:
-
-1. **Check Configuration File Path**
-   ```sh
-   # Make sure CONFIG_PATH is correctly set
-   CONFIG_PATH=/app/config/config.yaml
-   ```
-
-2. **Enable Debug Mode**
-   ```yaml
-   logging:
-     level: debug
-     format: text  # For more human-readable output
-   ```
-
-3. **API Endpoint Access**
-   Ensure your AudiobookShelf token has the necessary permissions.
-
-#### Progress Not Syncing
-- Check `sync.min_progress` setting (default: 0.01 = 1%)
-- Verify incremental sync is working properly
-- Enable debug logging to see detailed progress calculations
-
-## Development Features
-
-### Book Library Rearchitecture (In Development)
-
-The project includes a new **Store-Compare-Sync** architecture for enhanced book library management:
-
-- **Database-Driven Sync**: Books from both AudiobookShelf and Hardcover are stored locally for detailed comparison
-- **Auto-Matching**: ASIN (99% confidence) and ISBN (95% confidence) based automatic mapping
-- **Conflict Resolution**: Multiple strategies (prefer_abs, prefer_hardcover, prefer_newest, manual review)
-- **Progress Tracking**: Historical progress snapshots and sync event audit trails
-- **Per-Book Control**: Individual sync configuration per book with profile-level defaults
-
-For detailed documentation, see [docs/IMPLEMENTATION_COMPLETE.md](docs/IMPLEMENTATION_COMPLETE.md)
-
-### Getting Help
-For additional support:
-- 📋 Check [existing issues](https://github.com/drallgood/audiobookshelf-hardcover-sync/issues)
-- 📖 Review the [MIGRATION.md](MIGRATION.md) documentation
-- 🐛 Create a new issue with debug logs if problems persist
-
-## Contributing
-
-We welcome contributions! Please see our [contributing guidelines](CONTRIBUTING.md) for details.
-
-**Areas for contribution:**
-- 🧪 Test coverage improvements
-- 📖 Documentation enhancements  
-- 🐛 Bug fixes and performance improvements
-- ✨ New features and integrations
-
-## Support & Community
-
-- 📋 **Issues**: [GitHub Issues](https://github.com/drallgood/audiobookshelf-hardcover-sync/issues)
-- 🔒 **Security**: See [SECURITY.md](SECURITY.md) for vulnerability reporting
-- 📜 **License**: [Apache 2.0](LICENSE)
+1. Go to [Hardcover API Settings](https://hardcover.app/settings/api)
+2. Log in to your account
+3. Click **Generate New Token**
+4. Copy the token
 
 ---
 
-**⭐ If this project helps you, please consider giving it a star on GitHub!**
+## 🐳 Docker Deployment
+
+### Docker Compose (Production)
+
+Create a production-ready `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  audiobookshelf-hardcover-sync:
+    image: ghcr.io/drallgood/audiobookshelf-hardcover-sync:latest
+    container_name: abs-hardcover-sync
+    restart: unless-stopped
+    stop_grace_period: 10s
+    init: true
+    
+    ports:
+      - "8080:8080"
+    
+    volumes:
+      # Configuration
+      - ./config:/app/config:ro
+      # Persistent data
+      - ./data:/data
+      # Optional: separate cache
+      - ./cache:/data/cache
+    
+    environment:
+      # Server
+      - ENABLE_WEB_UI=true
+      - SERVER_PORT=8080
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+      
+      # Paths
+      - DATABASE_PATH=/data/db/sync.db
+      - CACHE_DIR=/data/cache
+      - SYNC_STATE_FILE=/data/sync_state.json
+      
+      # Security (use secrets in production!)
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - AUTH_ENABLED=${AUTH_ENABLED:-false}
+      - AUTH_DEFAULT_ADMIN_PASSWORD=${AUTH_ADMIN_PASSWORD}
+    
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Optional: resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          memory: 128M
+    
+    networks:
+      - abs-hc-network
+
+networks:
+  abs-hc-network:
+    driver: bridge
+```
+
+### Docker with External Database
+
+For PostgreSQL or MySQL/MariaDB:
+
+```yaml
+services:
+  audiobookshelf-hardcover-sync:
+    image: ghcr.io/drallgood/audiobookshelf-hardcover-sync:latest
+    environment:
+      - DATABASE_TYPE=postgresql
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=abs_sync
+      - DATABASE_USER=syncuser
+      - DATABASE_PASSWORD=${DB_PASSWORD}
+      - DATABASE_SSL_MODE=prefer
+    depends_on:
+      - postgres
+  
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=abs_sync
+      - POSTGRES_USER=syncuser
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+```
+
+### Multi-Architecture Support
+
+Images are built for multiple architectures:
+
+```bash
+# Explicit platform selection
+docker pull --platform linux/amd64 ghcr.io/drallgood/audiobookshelf-hardcover-sync:latest
+docker pull --platform linux/arm64 ghcr.io/drallgood/audiobookshelf-hardcover-sync:latest
+```
+
+---
+
+## ☸️ Kubernetes Deployment
+
+### Helm Chart Installation
+
+The easiest way to deploy to Kubernetes:
+
+```bash
+# Add the Helm repository
+helm repo add abs-hc-sync https://alexnolan.github.io/audiobookshelf-hardcover-sync
+helm repo update
+
+# Install with default values
+helm install my-sync abs-hc-sync/audiobookshelf-hardcover-sync
+
+# Install with custom values
+helm install my-sync abs-hc-sync/audiobookshelf-hardcover-sync \
+  --set webUI.enabled=true \
+  --set persistence.enabled=true \
+  --set persistence.size=10Gi \
+  --set resources.limits.memory=512Mi
+```
+
+### Custom Values
+
+Create a `values.yaml` file:
+
+```yaml
+# Enable web UI
+webUI:
+  enabled: true
+
+# Resource limits
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+
+# Persistence
+persistence:
+  enabled: true
+  storageClass: "standard"
+  size: 10Gi
+
+# Ingress (optional)
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: abs-sync.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: abs-sync-tls
+      hosts:
+        - abs-sync.example.com
+
+# Authentication
+authentication:
+  enabled: true
+  defaultAdmin:
+    username: admin
+    email: admin@example.com
+    password: "changeme"  # Use existingSecret in production
+  
+  # Keycloak/OIDC
+  keycloak:
+    enabled: true
+    issuer: "https://keycloak.example.com/realms/myrealm"
+    clientId: "abs-sync"
+    clientSecret: ""  # Use existingSecret
+    redirectUri: "https://abs-sync.example.com/auth/callback"
+
+# Existing secrets (recommended for production)
+existingSecret:
+  name: "abs-sync-secrets"
+  keys:
+    encryptionKey: "encryption-key"
+    authAdminPassword: "admin-password"
+    keycloakClientSecret: "keycloak-secret"
+```
+
+Apply the configuration:
+
+```bash
+helm install my-sync abs-hc-sync/audiobookshelf-hardcover-sync -f values.yaml
+```
+
+### Manual Kubernetes Deployment
+
+See [helm/audiobookshelf-hardcover-sync/](helm/audiobookshelf-hardcover-sync/) for complete manifests.
+
+---
+
+## 🔐 Security
+
+### Token Encryption
+
+All API tokens are encrypted at rest using **AES-256-GCM**:
+
+- Encryption keys are auto-generated and stored in the data directory
+- Override with `ENCRYPTION_KEY` environment variable (base64-encoded 32-byte key)
+- Tokens are never logged or exposed in API responses (masked)
+
+### Authentication & Authorization
+
+Optional authentication system with three user roles:
+
+- **Admin** - Full access, user management, system configuration
+- **User** - Sync operations, personal settings, status monitoring
+- **Viewer** - Read-only access to sync status
+
+#### Enable Authentication
+
+```yaml
+# config.yaml
+authentication:
+  enabled: true
+  default_admin:
+    username: "admin"
+    email: "admin@localhost"
+    password: "your-secure-password"  # Change this!
+```
+
+Or via environment:
+
+```bash
+export AUTH_ENABLED=true
+export AUTH_DEFAULT_ADMIN_PASSWORD=your-secure-password
+```
+
+#### Keycloak/OIDC Integration
+
+For enterprise SSO:
+
+```yaml
+authentication:
+  enabled: true
+  keycloak:
+    enabled: true
+    issuer: "https://keycloak.example.com/realms/myrealm"
+    client_id: "audiobookshelf-sync"
+    client_secret: "your-client-secret"
+    redirect_uri: "https://abs-sync.example.com/auth/callback"
+    scopes: "openid profile email"
+    role_claim: "realm_access.roles"
+```
+
+See [docs/AUTHENTICATION.md](docs/AUTHENTICATION.md) for complete setup guide.
+
+### Best Practices
+
+- ✅ Use environment variables or secrets for sensitive data
+- ✅ Enable authentication for multi-user deployments
+- ✅ Use HTTPS/TLS in production (configure reverse proxy or ingress)
+- ✅ Rotate API tokens regularly
+- ✅ Keep encryption keys backed up and secure
+- ✅ Use strong admin passwords (12+ characters)
+- ✅ Review audit logs in `sync_events` table
+- ❌ Don't commit tokens or secrets to version control
+- ❌ Don't expose the application directly to the internet without authentication
+
+---
+
+## 📊 Monitoring & Troubleshooting
+
+### Health Checks
+
+The application provides health check endpoints:
+
+```bash
+# Basic health check
+curl http://localhost:8080/health
+
+# Detailed health check with component status
+curl http://localhost:8080/healthz
+```
+
+### Logs
+
+View application logs:
+
+```bash
+# Docker Compose
+docker compose logs -f
+
+# Docker
+docker logs -f abs-hardcover-sync
+
+# Binary
+./audiobookshelf-hardcover-sync 2>&1 | tee app.log
+```
+
+Set log level:
+
+```yaml
+logging:
+  level: "debug"  # debug, info, warn, error
+  format: "json"  # json or console
+```
+
+### Database Inspection
+
+Access the SQLite database:
+
+```bash
+# Enter database shell
+sqlite3 data/database.db
+
+# Common queries
+.tables                                    # List all tables
+SELECT * FROM sync_profiles;               # View profiles
+SELECT * FROM abs_books LIMIT 10;          # View AudiobookShelf books
+SELECT * FROM book_mappings;               # View book mappings
+SELECT * FROM progress_histories           # View sync history
+  WHERE abs_book_id = 'your-book-id'
+  ORDER BY created_at DESC
+  LIMIT 10;
+SELECT * FROM sync_events                  # View sync events (audit log)
+  ORDER BY created_at DESC
+  LIMIT 20;
+```
+
+### Common Issues
+
+#### Problem: "Failed to decrypt token"
+
+**Cause**: Encryption key mismatch (usually after volume recreation in Docker)
+
+**Solution**:
+1. Ensure the encryption key is persistent:
+   ```yaml
+   # docker-compose.yml
+   environment:
+     - ENCRYPTION_KEY=your-base64-encoded-key
+   ```
+2. Or delete the database and re-create profiles:
+   ```bash
+   rm data/database.db
+   docker compose restart
+   ```
+
+#### Problem: "Book not syncing"
+
+**Cause**: May be below progress threshold, disabled, or in conflict
+
+**Solution**:
+1. Check book configuration in web UI (click book → settings icon)
+2. Verify sync is enabled for the book
+3. Check conflict resolution strategy
+4. Review sync events: `SELECT * FROM sync_events WHERE abs_book_id = 'book-id'`
+5. Force sync: Click "Force Sync" button in web UI
+
+#### Problem: "Rate limit exceeded"
+
+**Cause**: Too many Hardcover API requests
+
+**Solution**:
+1. Increase rate limit interval in config:
+   ```yaml
+   rate_limit:
+     rate: "2000ms"  # Slower rate
+   ```
+2. Reduce concurrent requests:
+   ```yaml
+   rate_limit:
+     max_concurrent: 2
+   ```
+
+#### Problem: Web UI not loading
+
+**Cause**: Web UI not enabled
+
+**Solution**:
+```bash
+# Enable via environment variable
+export ENABLE_WEB_UI=true
+
+# Or in config.yaml
+server:
+  enable_web_ui: true
+```
+
+### Performance Tuning
+
+For large libraries (1000+ books):
+
+```yaml
+# Increase cache size
+cache:
+  max_size: 10000
+  ttl: 24h
+
+# Optimize database
+database:
+  connection_pool:
+    max_open_conns: 50
+    max_idle_conns: 10
+    conn_max_lifetime: 120
+
+# Adjust sync settings
+sync:
+  incremental: true              # Only sync changed books
+  min_change_threshold: 120      # Require 2+ minutes change
+  batch_size: 50                 # Process in batches
+```
+
+---
+
+## 🔧 Migration from Original Project
+
+If you're migrating from the original [drallgood/audiobookshelf-hardcover-sync](https://github.com/drallgood/audiobookshelf-hardcover-sync):
+
+### Automatic Migration
+
+The application automatically migrates single-user configurations:
+
+1. Detects existing `config.yaml`
+2. Creates a backup: `config.yaml.backup.YYYYMMDD-HHMMSS`
+3. Creates "Default Profile" with your settings in the database
+4. Preserves all sync state and functionality
+
+### Manual Migration Steps
+
+1. **Stop the old version**:
+   ```bash
+   docker compose down
+   # or kill the binary process
+   ```
+
+2. **Update Docker image** (if using Docker):
+   ```yaml
+   # docker-compose.yml
+   services:
+     audiobookshelf-hardcover-sync:
+       image: ghcr.io/drallgood/audiobookshelf-hardcover-sync:latest  # Changed
+   ```
+
+3. **Enable web UI** (optional but recommended):
+   ```yaml
+   environment:
+     - ENABLE_WEB_UI=true
+   ```
+
+4. **Start the new version**:
+   ```bash
+   docker compose up -d
+   ```
+
+5. **Verify migration**:
+   - Access web UI at `http://localhost:8080`
+   - Check "Profiles" tab for "Default Profile"
+   - Verify tokens are working (click "Test Connection")
+   - Check sync status
+
+### Configuration Changes
+
+Some configuration keys have changed:
+
+| Old (v2.x) | New (v3.x) | Notes |
+|------------|------------|-------|
+| `app.sync_interval` | `sync.sync_interval` | Moved to sync section |
+| `app.minimum_progress` | `sync.minimum_progress` | Moved to sync section |
+| `app.sync_want_to_read` | `sync.sync_want_to_read` | Moved to sync section |
+| `app.sync_owned` | `sync.sync_owned` | Moved to sync section |
+| `app.dry_run` | `sync.dry_run` | Moved to sync section |
+
+The application will automatically read both old and new formats and log warnings for deprecated settings.
+
+---
+
+## 🛠️ Development
+
+### Prerequisites
+
+- Go 1.24 or later
+- Make
+- Docker (optional, for containerized builds)
+
+### Building from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/alexnolan/audiobookshelf-hardcover-sync.git
+cd audiobookshelf-hardcover-sync
+
+# Install dependencies
+go mod download
+
+# Build all binaries
+make build
+
+# Build specific tools
+make build-edition-tool
+make build-image-tool
+make build-hardcover-lookup
+
+# Run tests
+make test
+
+# Run linting
+make lint
+
+# Build Docker image
+make docker-build
+```
+
+### Project Structure
+
+```
+.
+├── cmd/                                    # Main applications
+│   ├── audiobookshelf-hardcover-sync/     # Main sync application
+│   ├── edition-tool/                      # Edition creation tool
+│   ├── image-tool/                        # Image upload tool
+│   └── hardcover-lookup/                  # ID lookup tool
+├── internal/                              # Private application code
+│   ├── api/                               # REST API handlers
+│   │   ├── audiobookshelf/                # AudiobookShelf client
+│   │   ├── hardcover/                     # Hardcover GraphQL client
+│   │   └── library.go                     # Book library API
+│   ├── auth/                              # Authentication system
+│   ├── config/                            # Configuration loading
+│   ├── crypto/                            # Encryption utilities
+│   ├── database/                          # Database layer (GORM)
+│   ├── sync/                              # Sync engine
+│   │   ├── service.go                     # Sync orchestration
+│   │   ├── abs_collector.go              # AudiobookShelf collector
+│   │   ├── hc_collector.go               # Hardcover collector
+│   │   └── database_sync.go              # Database-driven sync
+│   ├── multiuser/                         # Multi-profile management
+│   └── logger/                            # Structured logging
+├── web/static/                            # Web UI assets
+│   ├── index.html                         # Main dashboard
+│   ├── login.html                         # Login page
+│   ├── app.js                             # Frontend JavaScript
+│   └── styles.css                         # Styling
+├── docs/                                  # Documentation
+│   ├── AUTHENTICATION.md                  # Auth setup guide
+│   ├── QUICK_REFERENCE.md                 # Quick reference
+│   ├── hardcover-schema.graphql           # Hardcover GraphQL schema
+│   └── openapi.yaml                       # REST API specification
+├── helm/                                  # Kubernetes Helm chart
+└── test/                                  # Tests
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+make test
+
+# Run with coverage
+make test-coverage
+
+# Run specific package
+go test -v ./internal/sync/...
+
+# Run integration tests
+go test -v -tags=integration ./test/integration/...
+```
+
+### Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Make your changes
+4. Add tests for new functionality
+5. Run tests and linting: `make test lint`
+6. Commit with clear messages: `git commit -m "Add feature: description"`
+7. Push to your fork: `git push origin feature/my-feature`
+8. Open a Pull Request
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+
+---
+
+## 📚 Documentation
+
+- **[Quick Reference](docs/QUICK_REFERENCE.md)** - Fast reference for integration and deployment
+- **[Authentication Guide](docs/AUTHENTICATION.md)** - Setup authentication and OIDC
+- **[Database Schema](docs/DATABASE.md)** - Complete database documentation
+- **[API Reference](docs/openapi.yaml)** - OpenAPI/Swagger specification
+- **[Changelog](CHANGELOG.md)** - Version history and release notes
+- **[Migration Guide](MIGRATION.md)** - Migrating from v2.x to v3.x
+- **[Security Policy](SECURITY.md)** - Security policies and vulnerability reporting
+- **[Release Process](RELEASE.md)** - How releases are created
+
+---
+
+## 🐛 Troubleshooting & Support
+
+### Getting Help
+
+1. **Check the documentation** - Most questions are answered in the docs
+2. **Search existing issues** - Someone may have had the same problem
+3. **Enable debug logging** - Set `LOG_LEVEL=debug` for detailed output
+4. **Check the database** - Use `sqlite3` to inspect sync state
+5. **Open an issue** - [GitHub Issues](https://github.com/alexnolan/audiobookshelf-hardcover-sync/issues)
+
+### Reporting Bugs
+
+When opening an issue, please include:
+
+- Application version (`docker logs` or binary output)
+- Configuration (redact tokens!)
+- Steps to reproduce
+- Expected vs actual behavior
+- Relevant log output (set `LOG_LEVEL=debug`)
+- Database state (if applicable)
+
+### Feature Requests
+
+Feature requests are welcome! Please:
+
+- Check if the feature already exists or is planned
+- Describe the use case and problem it solves
+- Suggest implementation approach (optional)
+- Label the issue as `enhancement`
+
+---
+
+## 📝 License
+
+This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🙏 Acknowledgments
+
+- **Original Project**: [drallgood/audiobookshelf-hardcover-sync](https://github.com/drallgood/audiobookshelf-hardcover-sync) - Thank you for the excellent foundation!
+- **[AudiobookShelf](https://www.audiobookshelf.org/)** - Self-hosted audiobook and podcast server
+- **[Hardcover](https://hardcover.app/)** - Modern book tracking and discovery platform
+- All contributors who have helped improve this project
+
+---
+
+## 🔗 Links
+
+- **GitHub Repository**: [alexnolan/audiobookshelf-hardcover-sync](https://github.com/alexnolan/audiobookshelf-hardcover-sync)
+- **Docker Images**: [GitHub Container Registry](https://github.com/alexnolan/audiobookshelf-hardcover-sync/pkgs/container/audiobookshelf-hardcover-sync)
+- **Issues & Discussions**: [GitHub Issues](https://github.com/alexnolan/audiobookshelf-hardcover-sync/issues)
+- **Original Project**: [drallgood/audiobookshelf-hardcover-sync](https://github.com/drallgood/audiobookshelf-hardcover-sync)
+
+---
+
+<div align="center">
+
+**Made with ❤️ for audiobook enthusiasts**
+
+*If you find this project useful, please consider giving it a ⭐ on GitHub!*
+
+</div>
