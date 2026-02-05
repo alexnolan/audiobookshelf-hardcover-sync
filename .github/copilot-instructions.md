@@ -469,3 +469,216 @@ Uploads cover images to Hardcover for books/editions.
 #### Static Files
 - `GET /` - Serve web UI (index.html, library.html, etc.)
 - All static assets served from `web/static/`
+
+### Backward Compatibility
+
+#### Single-User Mode (Legacy)
+The application maintains 100% backward compatibility with the original single-user mode:
+- Set `AUDIOBOOKSHELF_URL`, `AUDIOBOOKSHELF_TOKEN`, `HARDCOVER_TOKEN` environment variables
+- No authentication required when auth is disabled
+- Legacy `/api/sync` endpoint still functional
+- Original configuration format still supported
+- Automatic migration from single-user config to multi-user database on first run
+
+#### Environment Variable Migration
+All original environment variables are still supported:
+- `AUDIOBOOKSHELF_URL` → profile config
+- `AUDIOBOOKSHELF_TOKEN` → encrypted in database
+- `HARDCOVER_TOKEN` → encrypted in database
+- `LOG_LEVEL`, `LOG_FORMAT` → logging config
+- `SYNC_INTERVAL`, `MINIMUM_PROGRESS`, `SYNC_WANT_TO_READ` → sync config
+- See `MIGRATION.md` for complete mapping
+
+#### Breaking Changes from Original
+- `HARDCOVER_SYNC_DELAY_MS` removed (replaced with token bucket rate limiting)
+- `AUDIOBOOK_MATCH_MODE` removed (improved matching is default)
+- Progress tracking now uses seconds instead of percentages (automatic conversion)
+
+### Development Workflow
+
+#### Local Development Setup
+```bash
+# Clone repository
+git clone https://github.com/alexnolan/audiobookshelf-hardcover-sync
+cd audiobookshelf-hardcover-sync
+
+# Install dependencies
+go mod download
+
+# Copy config example
+cp config.example.yaml config.yaml
+# Edit config.yaml with your settings
+
+# Run locally
+make run
+# OR
+go run cmd/audiobookshelf-hardcover-sync/main.go
+```
+
+#### Running Tests
+```bash
+# Run all tests
+make test
+
+# Run specific package tests
+go test -v ./internal/sync/...
+
+# Run with coverage
+go test -v -cover ./...
+
+# Run with race detector
+go test -race ./...
+```
+
+#### Linting
+```bash
+# Run linter
+make lint
+
+# Auto-fix linting issues
+go fmt ./...
+goimports -w .
+```
+
+#### Building
+```bash
+# Build binary
+make build
+
+# Build for specific platform
+GOOS=linux GOARCH=amd64 go build -o build/sync-linux-amd64 cmd/audiobookshelf-hardcover-sync/main.go
+
+# Build Docker image
+make docker-build
+
+# Build with version info
+go build -ldflags "-X main.Version=v1.2.3" cmd/audiobookshelf-hardcover-sync/main.go
+```
+
+#### Working with Database
+```bash
+# Run migrations (automatic on startup)
+# Database auto-migrates to latest schema
+
+# Inspect database
+sqlite3 data/audiobookshelf-hardcover-sync.db
+
+# Useful queries
+SELECT * FROM sync_profiles;
+SELECT * FROM book_mappings WHERE match_confidence > 0.8;
+SELECT * FROM progress_history WHERE abs_book_id = 'xxx' ORDER BY created_at DESC;
+```
+
+#### Hot Reload for Development
+```bash
+# Install air for hot reload
+go install github.com/cosmtrek/air@latest
+
+# Run with hot reload
+air
+```
+
+#### Debugging
+- Set `LOG_LEVEL=debug` for verbose logging
+- Use `DRY_RUN=true` to test without making changes to Hardcover
+- Check `data/sync_state.{profileID}.json` for state issues
+- View `mismatches/` directory for books that couldn't be matched
+- Use browser DevTools to inspect web UI API calls
+
+#### Common Development Tasks
+1. **Adding a new API endpoint**: Update `internal/server/server.go` with route, add handler in `internal/api/`
+2. **Adding a database model**: Add to `internal/database/models.go`, create migration logic
+3. **Adding a config option**: Update `internal/config/config.go`, add to `config.example.yaml`
+4. **Adding a web UI feature**: Update HTML in `web/static/`, add API handlers as needed
+5. **Modifying sync logic**: Update `internal/sync/service.go` and test thoroughly
+
+### Architecture Patterns
+
+#### Store-Compare-Sync Pattern
+1. **Collect Phase**: Fetch data from ABS and Hardcover into local database
+2. **Compare Phase**: Query database to identify books needing sync
+3. **Sync Phase**: Apply changes to Hardcover based on comparison results
+
+This pattern enables:
+- Book-level control and conflict resolution
+- Progress history tracking
+- Offline analysis and debugging
+- Incremental syncs based on state
+
+#### Collector Pattern
+Collectors are responsible for fetching data from external APIs and storing in database:
+- `ABSCollector` - Fetches from AudiobookShelf REST API
+- `HCCollector` - Fetches from Hardcover GraphQL API
+- Both implement rate limiting and error handling
+- Support for incremental collection based on last fetch time
+
+#### Repository Pattern
+All database operations go through `internal/database/repository.go`:
+- CRUD operations for all models
+- Bulk upsert with `ON CONFLICT` handling
+- Transaction support for atomic operations
+- Returns errors, callers decide how to handle
+
+#### Service Layer Pattern
+Business logic in service layer (`internal/sync/service.go`, `internal/multiuser/service.go`):
+- Orchestrates collectors and repository
+- Implements sync logic and conflict resolution
+- Handles state management and history tracking
+- Independent of HTTP layer for testability
+
+### Key Design Decisions
+
+#### Why Database-Driven?
+Original was stateless; each run re-fetched everything. Database enables:
+- Incremental syncs (faster, less API usage)
+- Progress history and audit trails
+- Per-book configuration and overrides
+- Multi-user support with isolated data
+- Offline analysis and debugging
+
+#### Why GraphQL for Hardcover?
+Hardcover API is GraphQL-first:
+- More efficient queries (request only needed fields)
+- Better schema documentation
+- Type safety with generated types
+- Single endpoint for all operations
+
+#### Why Multi-User Architecture?
+Users requested:
+- Multiple AudiobookShelf instances
+- Multiple Hardcover accounts
+- Household/family sharing scenarios
+- Separate sync configurations per user
+
+#### Why Token Encryption?
+Security best practice:
+- Tokens are sensitive credentials
+- Database files could be backed up to cloud
+- Compliance requirements (GDPR, etc.)
+- Defense in depth security
+
+### Performance Considerations
+
+#### Rate Limiting
+- Hardcover API: 60 req/min limit, we use 50 req/min for safety
+- Token bucket implementation with burst support
+- Per-profile rate limiting for multi-user
+- Exponential backoff on rate limit errors
+
+#### Caching
+- Cache Hardcover edition searches (`internal/cache/`)
+- TTL-based expiration (configurable)
+- In-memory cache, not persisted
+- Reduces redundant API calls
+
+#### Database Optimization
+- Indexes on frequently queried columns
+- Bulk upserts instead of individual inserts
+- Lazy loading of relationships
+- Connection pooling for PostgreSQL/MySQL
+
+#### Incremental Sync
+- Only fetch changed books from ABS
+- Track last sync time per profile
+- Skip books already in sync
+- Reduces sync time from minutes to seconds
