@@ -448,7 +448,7 @@ func createTestConfig(syncOwned bool) *config.Config {
 	cfg.RateLimit.MaxConcurrent = 5
 	cfg.Logging.Level = "info"
 	cfg.Logging.Format = "console"
-	cfg.Server.Port = "8080"
+	cfg.Server.Port = "8765"
 	cfg.Server.ShutdownTimeout = 30 * time.Second
 	
 	// Clear deprecated fields in App

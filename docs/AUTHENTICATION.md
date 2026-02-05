@@ -65,7 +65,7 @@ authentication:
     # OIDC client secret
     client_secret: "your-client-secret"
     # Redirect URI (must match Keycloak client config)
-    redirect_uri: "http://localhost:8080/auth/callback"
+    redirect_uri: "http://localhost:8765/auth/callback"
     # OIDC scopes to request
     scopes: "openid profile email"
     # JWT claim containing user roles

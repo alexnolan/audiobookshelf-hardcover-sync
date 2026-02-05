@@ -10,7 +10,7 @@ func TestIsLocalAudiobookShelfURL(t *testing.T) {
 		expected bool
 	}{
 		{"https://abs.books.princess.local/api/items/123/cover", true},
-		{"http://localhost:8080/cover", true},
+		{"http://localhost:8765/cover", true},
 		{"https://192.168.1.100/cover", true},
 		{"http://10.0.0.5/image.jpg", true},
 		{"https://172.16.0.1/cover", true},

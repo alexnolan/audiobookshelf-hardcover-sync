@@ -26,7 +26,7 @@ Add the following to your `config.yaml`:
 
 ```yaml
 server:
-  port: 8080                    # HTTP server port
+  port: 8765                    # HTTP server port
   enable_web_ui: true          # Enable web UI (default: false)
   shutdown_timeout: 30s        # Graceful shutdown timeout
 
@@ -66,7 +66,7 @@ HARDCOVER_TOKEN=your-hardcover-token
 ### Web UI Mode (`enable_web_ui: true`)
 
 **Characteristics:**
-- Modern web interface at `http://localhost:8080`
+- Modern web interface at `http://localhost:8765`
 - Multi-user support with individual token management
 - REST API endpoints
 - Real-time monitoring
@@ -102,7 +102,7 @@ AUDIOBOOKSHELF_URL=https://audiobookshelf.example.com
    ```
 
 3. **Access Web Interface:**
-   - Open `http://localhost:8080` in your browser
+   - Open `http://localhost:8765` in your browser
    - Your existing configuration is automatically migrated
    - Create users with their individual tokens
 
@@ -139,7 +139,7 @@ services:
       - ENABLE_WEB_UI=true
       - AUDIOBOOKSHELF_URL=https://audiobookshelf.example.com
     ports:
-      - "8080:8080"
+      - "8765:8765"
     volumes:
       - ./data:/app/data
 ```
