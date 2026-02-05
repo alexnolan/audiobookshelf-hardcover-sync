@@ -207,7 +207,7 @@ func DefaultConfig() *Config {
     cfg := &Config{}
 
 	// Set default values
-	cfg.Server.Port = "8080"
+	cfg.Server.Port = "8765"
 	cfg.Server.ShutdownTimeout = 30 * time.Second
 	cfg.Server.EnableWebUI = false // Web UI is disabled by default for backward compatibility
 

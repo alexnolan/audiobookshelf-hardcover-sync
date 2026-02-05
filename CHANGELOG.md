@@ -83,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **🎉 MAJOR: Multi-User Support**: Complete multi-user system with web interface and secure token management
   - **Multi-User Database**: SQLite backend with encrypted token storage using AES-256-GCM encryption
-  - **Web Management Interface**: Modern, responsive web UI accessible at `http://localhost:8080`
+  - **Web Management Interface**: Modern, responsive web UI accessible at `http://localhost:8765`
     - **Multi-Tab Interface**: Users, Sync Status, and Add User tabs for comprehensive management
     - **Real-Time Monitoring**: Live sync status updates with auto-refresh every 5 seconds
     - **User Management**: Create, edit, and delete users with individual configurations
@@ -185,7 +185,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Automatic Migration**: Existing single-user setups will be automatically migrated to multi-user database on first startup
 - **Backup Safety**: Original `config.yaml` files are backed up before migration
 - **No Action Required**: Migration is completely automatic and maintains all existing functionality
-- **Web Interface**: After migration, access the new web interface at `http://localhost:8080`
+- **Web Interface**: After migration, access the new web interface at `http://localhost:8765`
 
 ## [v2.1.0] - 2025-08-01
 

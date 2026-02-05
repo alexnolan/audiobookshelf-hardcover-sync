@@ -42,7 +42,7 @@ securityContext:
 
 service:
   type: ClusterIP
-  port: 8080
+  port: 8765
 
 # Web UI Configuration
 # The application includes a modern web interface for multi-user management
@@ -232,7 +232,7 @@ authentication:
 config:
   # Server configuration
   server:
-    port: "8080"
+    port: "8765"
     shutdownTimeout: "10s"
 
   # Rate limiting configuration

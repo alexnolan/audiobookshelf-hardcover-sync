@@ -17,7 +17,7 @@ func TestLoadConfigFromFile(t *testing.T) {
 	// Test with a sample YAML configuration
 	yamlContent := `# Server configuration
 server:
-  address: ":8080"
+  address: ":8765"
   debug: true
 
 # Logging configuration
@@ -101,7 +101,7 @@ func TestLoadConfig(t *testing.T) {
 	// Test with a sample YAML configuration
 	yamlContent := `# Server configuration
 server:
-  address: ":8080"
+  address: ":8765"
   debug: true
 
 # Logging configuration

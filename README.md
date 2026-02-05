@@ -42,7 +42,7 @@ All while maintaining **100% backward compatibility** with the original single-u
 - **Collection Support** - Filter by AudiobookShelf collections
 
 ### 🌐 Web Interface & Multi-User
-- **Modern Dashboard** - Intuitive web UI at `http://localhost:8080`
+- **Modern Dashboard** - Intuitive web UI at `http://localhost:8765`
 - **Profile Management** - Create and manage multiple sync profiles
 - **Book Library View** - Side-by-side comparison of AudiobookShelf vs Hardcover progress
 - **Real-Time Status** - Live sync monitoring with auto-refresh
@@ -98,7 +98,7 @@ services:
     container_name: abs-hardcover-sync
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "8765:8765"
     volumes:
       - ./config:/app/config
       - ./data:/data
@@ -107,7 +107,7 @@ services:
       - LOG_LEVEL=info
       - DATABASE_PATH=/data/audiobookshelf-hardcover-sync.db
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--spider", "http://localhost:8765/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -120,14 +120,14 @@ docker compose up -d
 docker compose logs -f
 ```
 
-**Access the web interface** at `http://localhost:8080` and create your first sync profile!
+**Access the web interface** at `http://localhost:8765` and create your first sync profile!
 
 ### Option 2: Docker CLI
 
 ```bash
 docker run -d \
   --name abs-hardcover-sync \
-  -p 8080:8080 \
+  -p 8765:8765 \
   -v $(pwd)/config:/app/config \
   -v $(pwd)/data:/data \
   -e ENABLE_WEB_UI=true \
@@ -151,7 +151,7 @@ docker run -d \
    ENABLE_WEB_UI=true ./audiobookshelf-hardcover-sync --server-only
    ```
 
-4. **Access the dashboard** at `http://localhost:8080`
+4. **Access the dashboard** at `http://localhost:8765`
 
 ### Option 4: Legacy Single-User Mode
 
@@ -211,10 +211,10 @@ The application provides a comprehensive REST API for programmatic control:
 #### Profile Management
 ```bash
 # List all profiles
-curl http://localhost:8080/api/profiles
+curl http://localhost:8765/api/profiles
 
 # Create a new profile
-curl -X POST http://localhost:8080/api/profiles \
+curl -X POST http://localhost:8765/api/profiles \
   -H "Content-Type: application/json" \
   -d '{
     "name": "My Profile",
@@ -226,50 +226,50 @@ curl -X POST http://localhost:8080/api/profiles \
   }'
 
 # Update a profile
-curl -X PUT http://localhost:8080/api/profiles/{id} \
+curl -X PUT http://localhost:8765/api/profiles/{id} \
   -H "Content-Type: application/json" \
   -d '{"name": "Updated Name"}'
 
 # Delete a profile
-curl -X DELETE http://localhost:8080/api/profiles/{id}
+curl -X DELETE http://localhost:8765/api/profiles/{id}
 ```
 
 #### Sync Operations
 ```bash
 # Start sync for a profile
-curl -X POST http://localhost:8080/api/profiles/{id}/sync
+curl -X POST http://localhost:8765/api/profiles/{id}/sync
 
 # Get sync status
-curl http://localhost:8080/api/profiles/{id}/status
+curl http://localhost:8765/api/profiles/{id}/status
 
 # Cancel running sync
-curl -X DELETE http://localhost:8080/api/profiles/{id}/sync
+curl -X DELETE http://localhost:8765/api/profiles/{id}/sync
 
 # Purge all data for a profile (books, mappings, history)
-curl -X POST http://localhost:8080/api/profiles/{id}/purge
+curl -X POST http://localhost:8765/api/profiles/{id}/purge
 ```
 
 #### Book Management
 ```bash
 # List books for a profile
-curl http://localhost:8080/api/profiles/{id}/books
+curl http://localhost:8765/api/profiles/{id}/books
 
 # Get specific book details
-curl http://localhost:8080/api/profiles/{id}/books/{absBookId}
+curl http://localhost:8765/api/profiles/{id}/books/{absBookId}
 
 # Sync a single book
-curl -X POST http://localhost:8080/api/profiles/{id}/books/{absBookId}/sync
+curl -X POST http://localhost:8765/api/profiles/{id}/books/{absBookId}/sync
 
 # Sync multiple books
-curl -X POST http://localhost:8080/api/profiles/{id}/books/sync-batch \
+curl -X POST http://localhost:8765/api/profiles/{id}/books/sync-batch \
   -H "Content-Type: application/json" \
   -d '{"abs_book_ids": ["book1", "book2"]}'
 
 # Get book sync history
-curl http://localhost:8080/api/profiles/{id}/books/{absBookId}/history
+curl http://localhost:8765/api/profiles/{id}/books/{absBookId}/history
 
 # Manually map a book to Hardcover edition
-curl -X POST http://localhost:8080/api/profiles/{id}/books/{absBookId}/map \
+curl -X POST http://localhost:8765/api/profiles/{id}/books/{absBookId}/map \
   -H "Content-Type: application/json" \
   -d '{"hardcover_edition_id": 12345, "confidence": 100}'
 ```
@@ -277,10 +277,10 @@ curl -X POST http://localhost:8080/api/profiles/{id}/books/{absBookId}/map \
 #### Collection Operations
 ```bash
 # Collect AudiobookShelf books
-curl -X POST http://localhost:8080/api/profiles/{id}/collect/abs
+curl -X POST http://localhost:8765/api/profiles/{id}/collect/abs
 
 # Collect Hardcover books
-curl -X POST http://localhost:8080/api/profiles/{id}/collect/hardcover
+curl -X POST http://localhost:8765/api/profiles/{id}/collect/hardcover
 ```
 
 For complete API documentation, see the [OpenAPI specification](docs/openapi.yaml).
@@ -351,7 +351,7 @@ cp config.example.yaml config.yaml
 ```yaml
 # Server configuration
 server:
-  port: "8080"
+  port: "8765"
   enable_web_ui: true  # Enable web UI for multi-user mode
 
 # Rate limiting (respect Hardcover API limits)
@@ -427,7 +427,7 @@ All settings can be overridden via environment variables:
 #### Core Settings
 ```bash
 # Server
-export SERVER_PORT=8080
+export SERVER_PORT=8765
 export ENABLE_WEB_UI=true
 export LOG_LEVEL=info
 
@@ -508,7 +508,7 @@ services:
     init: true
     
     ports:
-      - "8080:8080"
+      - "8765:8765"
     
     volumes:
       # Configuration
@@ -521,7 +521,7 @@ services:
     environment:
       # Server
       - ENABLE_WEB_UI=true
-      - SERVER_PORT=8080
+      - SERVER_PORT=8765
       - LOG_LEVEL=info
       - LOG_FORMAT=json
       
@@ -536,7 +536,7 @@ services:
       - AUTH_DEFAULT_ADMIN_PASSWORD=${AUTH_ADMIN_PASSWORD}
     
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--spider", "http://localhost:8765/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -780,10 +780,10 @@ The application provides health check endpoints:
 
 ```bash
 # Basic health check
-curl http://localhost:8080/health
+curl http://localhost:8765/health
 
 # Detailed health check with component status
-curl http://localhost:8080/healthz
+curl http://localhost:8765/healthz
 ```
 
 ### Logs
@@ -958,7 +958,7 @@ The application automatically migrates single-user configurations:
    ```
 
 5. **Verify migration**:
-   - Access web UI at `http://localhost:8080`
+   - Access web UI at `http://localhost:8765`
    - Check "Profiles" tab for "Default Profile"
    - Verify tokens are working (click "Test Connection")
    - Check sync status
