@@ -82,7 +82,7 @@ HC API ◀── HCCollector ◀── HardcoverUserBook table
 - `internal/api/` - HTTP handlers and API layer
 - `internal/api/audiobookshelf/` - ABS REST client
 - `internal/api/hardcover/` - Hardcover GraphQL client
-- `internal/api/audnex/` - Audnex API client for metadata enrichment
+- `internal/api/audnex/` - Audnex API client for metadata enrichment (ASIN lookups)
 - `internal/auth/` - Authentication system (local + OIDC)
 - `internal/config/` - Configuration loading
 - `internal/crypto/` - AES-256-GCM encryption for tokens
