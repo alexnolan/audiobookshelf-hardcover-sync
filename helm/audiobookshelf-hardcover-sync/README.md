@@ -87,8 +87,8 @@ http://<service-url>:<port>/
 
 #### Without Ingress (Port Forward)
 ```bash
-kubectl port-forward service/my-sync-audiobookshelf-hardcover-sync 8080:8080
-# Access at: http://localhost:8080
+kubectl port-forward service/my-sync-audiobookshelf-hardcover-sync 8765:8765
+# Access at: http://localhost:8765
 ```
 
 #### With Ingress Enabled
@@ -154,7 +154,7 @@ See the [Authentication Guide](../../docs/AUTHENTICATION.md) for detailed setup 
 | Name                 | Description                                                | Value       |
 | -------------------- | ---------------------------------------------------------- | ----------- |
 | `service.type`       | Service type                                               | `ClusterIP` |
-| `service.port`       | Service HTTP port                                          | `8080`      |
+| `service.port`       | Service HTTP port                                          | `8765`      |
 
 ### Ingress parameters
 
@@ -180,7 +180,7 @@ See the [Authentication Guide](../../docs/AUTHENTICATION.md) for detailed setup 
 
 | Name                                    | Description                                                | Value              |
 | --------------------------------------- | ---------------------------------------------------------- | ------------------ |
-| `config.server.port`                    | Server port                                                | `"8080"`           |
+| `config.server.port`                    | Server port                                                | `"8765"`           |
 | `config.server.shutdownTimeout`         | Graceful shutdown timeout                                  | `"10s"`            |
 | `config.rateLimit.rate`                 | Minimum time between requests                              | `"1500ms"`         |
 | `config.rateLimit.burst`                | Maximum number of requests in a burst                      | `2`                |

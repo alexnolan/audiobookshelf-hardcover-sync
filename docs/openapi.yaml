@@ -20,7 +20,7 @@ info:
     name: API Support
     url: https://github.com/drallgood/audiobookshelf-hardcover-sync
 servers:
-  - url: http://localhost:8080/api
+  - url: http://localhost:8765/api
     description: Development server
   - url: https://api.example.com/v1
     description: Production server

@@ -367,7 +367,7 @@ services:
     depends_on:
       - postgres
     ports:
-      - "8080:8080"
+      - "8765:8765"
 
 volumes:
   postgres_data:
