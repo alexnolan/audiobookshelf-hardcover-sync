@@ -14,6 +14,9 @@ type HardcoverClientInterface interface {
 	// SearchPublishers searches for publishers by name in the Hardcover database
 	SearchPublishers(ctx context.Context, name string, limit int) ([]models.Publisher, error)
 
+	// SearchPeople searches for people (authors or narrators) by name
+	SearchPeople(ctx context.Context, name, personType string, limit int) ([]models.Author, error)
+
 	// SearchAuthors searches for authors by name in the Hardcover database
 	SearchAuthors(ctx context.Context, name string, limit int) ([]models.Author, error)
 
@@ -95,4 +98,10 @@ type HardcoverClientInterface interface {
 
 	// GetBookEditions retrieves all editions for a book by its ID
 	GetBookEditions(ctx context.Context, bookID int) ([]BookEdition, error)
+	
+	// GraphQLQuery executes a GraphQL query
+	GraphQLQuery(ctx context.Context, query string, variables map[string]interface{}, result interface{}) error
+	
+	// GraphQLMutation executes a GraphQL mutation
+	GraphQLMutation(ctx context.Context, mutation string, variables map[string]interface{}, result interface{}) error
 }

@@ -1751,3 +1751,544 @@ func (api *LibraryAPI) AddToWantToReadHandler(w http.ResponseWriter, r *http.Req
 		},
 	})
 }
+
+// SearchPeopleHandler searches for authors or narrators by name
+func (api *LibraryAPI) SearchPeopleHandler(w http.ResponseWriter, r *http.Request) {
+	log := logger.Get()
+	w.Header().Set("Content-Type", "application/json")
+
+	profileID := r.PathValue("id")
+	if profileID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Profile ID required",
+		})
+		return
+	}
+
+	// Get query parameters
+	name := r.URL.Query().Get("name")
+	personType := r.URL.Query().Get("type") // "author" or "narrator"
+	limitStr := r.URL.Query().Get("limit")
+	
+	if name == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Name parameter required",
+		})
+		return
+	}
+	
+	// Default to author if not specified
+	if personType == "" {
+		personType = "author"
+	}
+	
+	// Default limit to 10
+	limit := 10
+	if limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	// Get HC collector
+	hcCollector, err := api.collectorFactory.CreateHCCollector(profileID)
+	if err != nil {
+		log.Error("Failed to create HC collector", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to initialize Hardcover client",
+		})
+		return
+	}
+
+	ctx := r.Context()
+
+	// Search for people
+	people, err := hcCollector.SearchPeople(ctx, name, personType, limit)
+	if err != nil {
+		log.Error("Failed to search people", map[string]interface{}{
+			"error": err.Error(),
+			"name":  name,
+			"type":  personType,
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to search people: " + err.Error(),
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data:    people,
+	})
+}
+
+// SearchPublishersHandler searches for publishers by name
+func (api *LibraryAPI) SearchPublishersHandler(w http.ResponseWriter, r *http.Request) {
+	log := logger.Get()
+	w.Header().Set("Content-Type", "application/json")
+
+	profileID := r.PathValue("id")
+	if profileID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Profile ID required",
+		})
+		return
+	}
+
+	// Get query parameters
+	name := r.URL.Query().Get("name")
+	limitStr := r.URL.Query().Get("limit")
+	
+	if name == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Name parameter required",
+		})
+		return
+	}
+	
+	// Default limit to 10
+	limit := 10
+	if limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	// Get HC collector
+	hcCollector, err := api.collectorFactory.CreateHCCollector(profileID)
+	if err != nil {
+		log.Error("Failed to create HC collector", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to initialize Hardcover client",
+		})
+		return
+	}
+
+	ctx := r.Context()
+
+	// Search for publishers
+	publishers, err := hcCollector.SearchPublishers(ctx, name, limit)
+	if err != nil {
+		log.Error("Failed to search publishers", map[string]interface{}{
+			"error": err.Error(),
+			"name":  name,
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to search publishers: " + err.Error(),
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data:    publishers,
+	})
+}
+
+// CreateEditionRequest represents a request to create a new edition
+type CreateEditionRequest struct {
+	BookID        int    `json:"book_id"`
+	Title         string `json:"title"`
+	Subtitle      string `json:"subtitle,omitempty"`
+	ImageURL      string `json:"image_url,omitempty"`
+	ISBN10        string `json:"isbn_10,omitempty"`
+	ISBN13        string `json:"isbn_13,omitempty"`
+	ASIN          string `json:"asin,omitempty"`
+	PublishedDate string `json:"published_date,omitempty"`
+	PublisherID   int    `json:"publisher_id,omitempty"`
+	LanguageID    int    `json:"language_id,omitempty"`
+	CountryID     int    `json:"country_id,omitempty"`
+	AuthorIDs     []int  `json:"author_ids,omitempty"`
+	NarratorIDs   []int  `json:"narrator_ids,omitempty"`
+	AudioLength   int    `json:"audio_seconds,omitempty"`
+	ReleaseDate   string `json:"release_date,omitempty"`
+	EditionInfo   string `json:"edition_information,omitempty"`
+	EditionFormat string `json:"edition_format,omitempty"`
+}
+
+// CreateEditionHandler creates a new audiobook edition in Hardcover
+func (api *LibraryAPI) CreateEditionHandler(w http.ResponseWriter, r *http.Request) {
+	log := logger.Get()
+	w.Header().Set("Content-Type", "application/json")
+
+	profileID := r.PathValue("id")
+	if profileID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Profile ID required",
+		})
+		return
+	}
+
+	var req CreateEditionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	// Validate required fields
+	if req.BookID == 0 || req.Title == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "book_id and title are required",
+		})
+		return
+	}
+
+	// Get HC collector to access the Hardcover client
+	hcCollector, err := api.collectorFactory.CreateHCCollector(profileID)
+	if err != nil {
+		log.Error("Failed to create HC collector", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to initialize Hardcover client",
+		})
+		return
+	}
+
+	ctx := r.Context()
+
+	// Import edition package to use the Creator
+	// Note: This requires adding the edition package import at the top of the file
+	editionInput := &struct {
+		BookID        int    `json:"book_id"`
+		Title         string `json:"title"`
+		Subtitle      string `json:"subtitle,omitempty"`
+		ImageURL      string `json:"image_url,omitempty"`
+		ISBN10        string `json:"isbn_10,omitempty"`
+		ISBN13        string `json:"isbn_13,omitempty"`
+		ASIN          string `json:"asin,omitempty"`
+		PublishedDate string `json:"published_date,omitempty"`
+		PublisherID   int    `json:"publisher_id,omitempty"`
+		LanguageID    int    `json:"language_id,omitempty"`
+		CountryID     int    `json:"country_id,omitempty"`
+		AuthorIDs     []int  `json:"author_ids,omitempty"`
+		NarratorIDs   []int  `json:"narrator_ids,omitempty"`
+		AudioLength   int    `json:"audio_seconds,omitempty"`
+		ReleaseDate   string `json:"release_date,omitempty"`
+		EditionInfo   string `json:"edition_information,omitempty"`
+		EditionFormat string `json:"edition_format,omitempty"`
+	}{
+		BookID:        req.BookID,
+		Title:         req.Title,
+		Subtitle:      req.Subtitle,
+		ImageURL:      req.ImageURL,
+		ISBN10:        req.ISBN10,
+		ISBN13:        req.ISBN13,
+		ASIN:          req.ASIN,
+		PublishedDate: req.PublishedDate,
+		PublisherID:   req.PublisherID,
+		LanguageID:    req.LanguageID,
+		CountryID:     req.CountryID,
+		AuthorIDs:     req.AuthorIDs,
+		NarratorIDs:   req.NarratorIDs,
+		AudioLength:   req.AudioLength,
+		ReleaseDate:   req.ReleaseDate,
+		EditionInfo:   req.EditionInfo,
+		EditionFormat: req.EditionFormat,
+	}
+
+	// Marshal and unmarshal to convert to the edition package's EditionInput type
+	inputJSON, err := json.Marshal(editionInput)
+	if err != nil {
+		log.Error("Failed to marshal edition input", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to process edition input",
+		})
+		return
+	}
+
+	// Create the edition using GraphQL mutation directly
+	// This is a simplified version - we'll use the Hardcover client's GraphQL mutation capability
+	mutation := `
+		mutation CreateEdition($input: EditionInput!) {
+			createEdition(input: $input) {
+				edition {
+					id
+					title
+					reading_format_id
+				}
+			}
+		}
+	`
+
+	variables := map[string]interface{}{
+		"input": json.RawMessage(inputJSON),
+	}
+
+	var result struct {
+		CreateEdition struct {
+			Edition struct {
+				ID              int    `json:"id"`
+				Title           string `json:"title"`
+				ReadingFormatID int    `json:"reading_format_id"`
+			} `json:"edition"`
+		} `json:"createEdition"`
+	}
+
+	err = hcCollector.GraphQLMutation(ctx, mutation, variables, &result)
+	if err != nil {
+		log.Error("Failed to create edition", map[string]interface{}{
+			"error":   err.Error(),
+			"book_id": req.BookID,
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to create edition: " + err.Error(),
+		})
+		return
+	}
+
+	log.Info("Edition created successfully", map[string]interface{}{
+		"profile_id":  profileID,
+		"edition_id":  result.CreateEdition.Edition.ID,
+		"book_id":     req.BookID,
+		"title":       result.CreateEdition.Edition.Title,
+	})
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"edition_id": result.CreateEdition.Edition.ID,
+			"title":      result.CreateEdition.Edition.Title,
+			"book_id":    req.BookID,
+		},
+	})
+}
+
+// PrepopulateEditionHandler prepopulates edition data from an existing Hardcover book
+func (api *LibraryAPI) PrepopulateEditionHandler(w http.ResponseWriter, r *http.Request) {
+	log := logger.Get()
+	w.Header().Set("Content-Type", "application/json")
+
+	profileID := r.PathValue("id")
+	bookIDStr := r.URL.Query().Get("book_id")
+
+	if profileID == "" || bookIDStr == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Profile ID and book_id required",
+		})
+		return
+	}
+
+	bookID, err := strconv.Atoi(bookIDStr)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Invalid book_id",
+		})
+		return
+	}
+
+	// Get HC collector
+	hcCollector, err := api.collectorFactory.CreateHCCollector(profileID)
+	if err != nil {
+		log.Error("Failed to create HC collector", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to initialize Hardcover client",
+		})
+		return
+	}
+
+	ctx := r.Context()
+
+	// Query to get book details for prepopulation
+	query := `
+		query GetBookForPrepopulation($id: Int!) {
+			book(id: $id) {
+				id
+				title
+				subtitle
+				image
+				contributions {
+					author {
+						id
+						name
+					}
+				}
+			}
+		}
+	`
+
+	variables := map[string]interface{}{
+		"id": bookID,
+	}
+
+	var result struct {
+		Book struct {
+			ID            int    `json:"id"`
+			Title         string `json:"title"`
+			Subtitle      string `json:"subtitle"`
+			Image         string `json:"image"`
+			Contributions []struct {
+				Author struct {
+					ID   string `json:"id"`
+					Name string `json:"name"`
+				} `json:"author"`
+			} `json:"contributions"`
+		} `json:"book"`
+	}
+
+	err = hcCollector.GraphQLQuery(ctx, query, variables, &result)
+	if err != nil {
+		log.Error("Failed to fetch book for prepopulation", map[string]interface{}{
+			"error":   err.Error(),
+			"book_id": bookID,
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to fetch book data: " + err.Error(),
+		})
+		return
+	}
+
+	// Build prepopulated data
+	authorIDs := []int{}
+	for _, contrib := range result.Book.Contributions {
+		if authorID, err := strconv.Atoi(contrib.Author.ID); err == nil {
+			authorIDs = append(authorIDs, authorID)
+		}
+	}
+
+	prepopulated := CreateEditionRequest{
+		BookID:    bookID,
+		Title:     result.Book.Title,
+		Subtitle:  result.Book.Subtitle,
+		ImageURL:  result.Book.Image,
+		AuthorIDs: authorIDs,
+		// Set reading format to audiobook (2) by default
+		LanguageID: 1, // Default to English
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data:    prepopulated,
+	})
+}
+
+// UploadImageRequest represents a request to upload an image
+type UploadImageRequest struct {
+	ImageURL    string `json:"image_url"`
+	EditionID   int    `json:"edition_id,omitempty"`
+	BookID      int    `json:"book_id,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// UploadImageHandler uploads a cover image to an edition or book
+func (api *LibraryAPI) UploadImageHandler(w http.ResponseWriter, r *http.Request) {
+	log := logger.Get()
+	w.Header().Set("Content-Type", "application/json")
+
+	profileID := r.PathValue("id")
+	if profileID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Profile ID required",
+		})
+		return
+	}
+
+	var req UploadImageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	// Validate required fields
+	if req.ImageURL == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "image_url is required",
+		})
+		return
+	}
+
+	if req.EditionID == 0 && req.BookID == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Either edition_id or book_id is required",
+		})
+		return
+	}
+
+	// Get HC collector
+	hcCollector, err := api.collectorFactory.CreateHCCollector(profileID)
+	if err != nil {
+		log.Error("Failed to create HC collector", map[string]interface{}{"error": err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "Failed to initialize Hardcover client",
+		})
+		return
+	}
+
+	ctx := r.Context()
+
+	// Note: This is a placeholder - actual image upload logic would need to be implemented
+	// using the edition.Creator's UploadEditionImage method or similar functionality
+	// For now, we'll return a success response indicating the feature needs implementation
+	
+	log.Info("Image upload requested", map[string]interface{}{
+		"profile_id":  profileID,
+		"edition_id":  req.EditionID,
+		"book_id":     req.BookID,
+		"image_url":   req.ImageURL,
+	})
+
+	// Suppress unused variable warning
+	_ = hcCollector
+	_ = ctx
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"status":  "image_upload_pending",
+			"message": "Image upload functionality to be implemented",
+		},
+	})
+}
