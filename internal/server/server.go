@@ -87,6 +87,7 @@ func New(addr string, multiUserService *multiuser.MultiUserService, authService 
 	apiMux.HandleFunc("GET /profiles/{id}/book-syncs", s.handleAPIBookSyncLogs)  // Book sync logs endpoint
 	apiMux.HandleFunc("GET /profiles/{id}/book-syncs/{audiobookId}", s.handleAPIBookSyncLog)  // Single book sync log
 	apiMux.HandleFunc("GET /profiles/{id}/sync-events", s.handleAPILibrarySyncEvents)  // Sync events endpoint
+	apiMux.HandleFunc("GET /profiles/{id}/sync-schedule", s.handleAPISyncSchedule)  // Sync schedule/timeline endpoint
 	apiMux.HandleFunc("GET /profiles/{id}/abs/libraries", s.handleAPIABSLibraries)  // ABS libraries endpoint
 	apiMux.HandleFunc("GET /profiles/{id}/abs/collections", s.handleAPIABSCollections)  // ABS collections endpoint
 	
@@ -557,6 +558,11 @@ func (s *Server) handleAPIBookSyncLogs(w http.ResponseWriter, r *http.Request) {
 // handleAPIBookSyncLog wraps the handler for single book sync log
 func (s *Server) handleAPIBookSyncLog(w http.ResponseWriter, r *http.Request) {
 	s.apiHandler.GetBookSyncLog(w, r)
+}
+
+// handleAPISyncSchedule wraps the handler for sync schedule/timeline
+func (s *Server) handleAPISyncSchedule(w http.ResponseWriter, r *http.Request) {
+	s.apiHandler.GetSyncSchedule(w, r)
 }
 
 // handleAPIPurgeProfileData handles POST /api/profiles/{id}/purge

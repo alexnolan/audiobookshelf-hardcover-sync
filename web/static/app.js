@@ -2811,21 +2811,24 @@ async function loadBookSyncLogs() {
     container.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Loading sync history...</p></div>';
     
     try {
-        // Fetch sync summary and sync events in parallel
-        const [summaryRes, eventsRes, logsRes] = await Promise.all([
+        // Fetch sync summary, sync events, logs, and schedule in parallel
+        const [summaryRes, eventsRes, logsRes, scheduleRes] = await Promise.all([
             fetch(`/api/profiles/${profileId}/sync-summary`),
             fetch(`/api/profiles/${profileId}/sync-events?limit=50`),
-            fetch(`/api/profiles/${profileId}/book-syncs?limit=50`)
+            fetch(`/api/profiles/${profileId}/book-syncs?limit=50`),
+            fetch(`/api/profiles/${profileId}/sync-schedule`)
         ]);
         
         const summaryData = await summaryRes.json();
         const eventsData = await eventsRes.json();
         const logsData = await logsRes.json();
+        const scheduleData = await scheduleRes.json();
         
         displaySyncHistory(
             summaryData.success ? summaryData.data : null,
             eventsData.success ? eventsData.data?.events : [],
-            logsData.success ? (logsData.data?.logs || []) : []
+            logsData.success ? (logsData.data?.logs || []) : [],
+            scheduleData.success ? scheduleData.data : null
         );
     } catch (error) {
         console.error('Failed to load sync history:', error);
@@ -2833,9 +2836,151 @@ async function loadBookSyncLogs() {
     }
 }
 
-function displaySyncHistory(summary, events, logs) {
+// renderSyncTimeline creates a visual timeline of past and future sync operations
+function renderSyncTimeline(scheduleData) {
+    if (!scheduleData || !scheduleData.events || scheduleData.events.length === 0) {
+        return '';
+    }
+
+    const now = new Date();
+    const events = scheduleData.events;
+    
+    // Sort events by time
+    events.sort((a, b) => new Date(a.time) - new Date(b.time));
+    
+    // Separate past and future events
+    const pastEvents = events.filter(e => e.type === 'past' && new Date(e.time) <= now);
+    const futureEvents = events.filter(e => e.type === 'future' && new Date(e.time) > now);
+    
+    let html = `
+        <div class="sync-timeline-container" style="margin-bottom: 2rem;">
+            <h3 style="margin: 0 0 1rem 0; font-size: 1.1rem;">🕐 Sync Schedule Timeline</h3>
+            <div class="sync-timeline-info" style="margin-bottom: 1rem; padding: 0.75rem; background: #f5f5f5; border-radius: 6px; font-size: 0.9rem;">
+                <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+                    <div>
+                        <strong>Sync Interval:</strong> ${scheduleData.sync_interval || 'Not configured'}
+                    </div>
+                    <div>
+                        <strong>Past Syncs:</strong> ${pastEvents.length}
+                    </div>
+                    <div>
+                        <strong>Upcoming Syncs:</strong> ${futureEvents.length}
+                    </div>
+                </div>
+            </div>
+            <div class="sync-timeline">
+    `;
+    
+    // Render past events (last 5)
+    const recentPast = pastEvents.slice(-5).reverse();
+    if (recentPast.length > 0) {
+        html += '<div class="timeline-section past-events" style="margin-bottom: 1.5rem;">';
+        html += '<h4 style="font-size: 0.95rem; margin: 0 0 0.75rem 0; color: #666;">Recent Syncs</h4>';
+        html += '<div class="timeline-events">';
+        
+        recentPast.forEach(event => {
+            const eventDate = new Date(event.time);
+            const timeAgo = getTimeAgo(eventDate);
+            const statusIcon = event.status === 'error' ? '❌' : '✅';
+            const statusClass = event.status === 'error' ? 'error' : 'success';
+            
+            html += `
+                <div class="timeline-event ${statusClass}" style="display: flex; align-items: center; padding: 0.75rem; margin-bottom: 0.5rem; background: white; border-left: 4px solid ${event.status === 'error' ? '#f44336' : '#4CAF50'}; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <div style="font-size: 1.5rem; margin-right: 1rem;">${statusIcon}</div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 500;">${event.description}</div>
+                        <div style="font-size: 0.85rem; color: #666; margin-top: 0.25rem;">
+                            ${eventDate.toLocaleString()} (${timeAgo})
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += '</div></div>';
+    }
+    
+    // Current time marker
+    html += `
+        <div class="timeline-now" style="display: flex; align-items: center; margin: 1rem 0; padding: 0.5rem 0;">
+            <div style="flex: 1; height: 2px; background: linear-gradient(to right, #2196F3, transparent);"></div>
+            <div style="padding: 0.25rem 1rem; background: #2196F3; color: white; border-radius: 20px; font-size: 0.85rem; font-weight: 600; white-space: nowrap;">
+                ⏰ NOW
+            </div>
+            <div style="flex: 1; height: 2px; background: linear-gradient(to left, #2196F3, transparent);"></div>
+        </div>
+    `;
+    
+    // Render future events (next 5)
+    const upcomingFuture = futureEvents.slice(0, 5);
+    if (upcomingFuture.length > 0) {
+        html += '<div class="timeline-section future-events">';
+        html += '<h4 style="font-size: 0.95rem; margin: 0 0 0.75rem 0; color: #666;">Upcoming Syncs</h4>';
+        html += '<div class="timeline-events">';
+        
+        upcomingFuture.forEach((event, index) => {
+            const eventDate = new Date(event.time);
+            const timeUntil = getTimeUntil(eventDate);
+            const isNext = index === 0;
+            
+            html += `
+                <div class="timeline-event future" style="display: flex; align-items: center; padding: 0.75rem; margin-bottom: 0.5rem; background: ${isNext ? '#E3F2FD' : 'white'}; border-left: 4px solid ${isNext ? '#2196F3' : '#9E9E9E'}; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <div style="font-size: 1.5rem; margin-right: 1rem;">📅</div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 500;">${isNext ? '⭐ ' : ''}${event.description}</div>
+                        <div style="font-size: 0.85rem; color: #666; margin-top: 0.25rem;">
+                            ${eventDate.toLocaleString()} (${timeUntil})
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += '</div></div>';
+    }
+    
+    html += '</div></div>';
+    return html;
+}
+
+// Helper function to get "X ago" string
+function getTimeAgo(date) {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins} min${diffMins !== 1 ? 's' : ''} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+    return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) !== 1 ? 's' : ''} ago`;
+}
+
+// Helper function to get "in X" string
+function getTimeUntil(date) {
+    const now = new Date();
+    const diffMs = date - now;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'imminently';
+    if (diffMins < 60) return `in ${diffMins} min${diffMins !== 1 ? 's' : ''}`;
+    if (diffHours < 24) return `in ${diffHours} hour${diffHours !== 1 ? 's' : ''}`;
+    if (diffDays < 7) return `in ${diffDays} day${diffDays !== 1 ? 's' : ''}`;
+    return `in ${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) !== 1 ? 's' : ''}`;
+}
+
+function displaySyncHistory(summary, events, logs, scheduleData) {
     const container = document.getElementById('book-logs-container');
     let html = '';
+    
+    // Sync Schedule Timeline section
+    if (scheduleData && scheduleData.events && scheduleData.events.length > 0) {
+        html += renderSyncTimeline(scheduleData);
+    }
     
     // Summary section
     if (summary) {
