@@ -64,6 +64,11 @@ config.yaml.backup*
 *.log
 logs/
 
+# AudiobookShelf response files (may contain PII)
+audiobookshelf_raw_response.json
+**/audiobookshelf_raw_response.json
+**/audiobookshelf_response.json
+
 # Temporary files and IDE specific
 *.tmp
 *.swp
