@@ -1819,9 +1819,10 @@ class SyncProfileApp {
 
     async handleAddProfile(event) {
         const formData = new FormData(event.target);
+        const profileName = formData.get('name');
         const profileData = {
             id: formData.get('id'),
-            name: formData.get('name'),
+            name: profileName,
             audiobookshelf_url: formData.get('audiobookshelf_url'),
             audiobookshelf_token: formData.get('audiobookshelf_token'),
             hardcover_token: formData.get('hardcover_token'),
@@ -1858,15 +1859,15 @@ class SyncProfileApp {
             const data = await response.json();
 
             if (data.success) {
-                this.showToast('Profile created successfully!', 'success');
+                this.showToast(`Profile "${profileName}" created successfully`, 'success');
                 event.target.reset();
-                this.loadProfiles();
-                this.showTab('profiles');
+                await this.loadProfiles();
+                this.showTab('users');
             } else {
-                this.showToast('Failed to create profile: ' + data.error, 'error');
+                this.showToast(`Failed to create profile "${profileName}": ${data.error}`, 'error');
             }
         } catch (error) {
-            this.showToast('Error creating profile: ' + error.message, 'error');
+            this.showToast(`Error creating profile "${profileName}": ${error.message}`, 'error');
         } finally {
             this.hideLoading();
         }
@@ -1963,10 +1964,11 @@ class SyncProfileApp {
     async handleEditProfile(event) {
         const formData = new FormData(event.target);
         const userId = formData.get('id');
+        const profileName = formData.get('name');
         
         // Update user name
         const userUpdateData = {
-            name: formData.get('name')
+            name: profileName
         };
 
         // Update user config with form data
@@ -2025,18 +2027,22 @@ class SyncProfileApp {
                 throw new Error(configData.error);
             }
 
-            this.showToast('Profile updated successfully!', 'success');
+            this.showToast(`Profile "${profileName}" updated successfully`, 'success');
             this.closeEditModal();
-            this.loadProfiles();
+            await this.loadProfiles();
         } catch (error) {
-            this.showToast('Error updating profile: ' + error.message, 'error');
+            this.showToast(`Error updating profile "${profileName}": ${error.message}`, 'error');
         } finally {
             this.hideLoading();
         }
     }
 
     async deleteProfile(profileId) {
-        if (!confirm('Are you sure you want to delete this sync profile? This action cannot be undone.')) {
+        // Get profile name before deleting
+        const profileName = this.users?.find(u => u.id === profileId)?.name || profileId;
+        
+        // Keep confirmation for destructive operations (like "purge data")
+        if (!confirm(`Are you sure you want to delete the profile "${profileName}"? This will remove all sync data and cannot be undone.`)) {
             return;
         }
 
@@ -2049,14 +2055,17 @@ class SyncProfileApp {
             const data = await response.json();
 
             if (data.success) {
-                this.showToast('Profile deleted successfully!', 'success');
-                this.loadProfiles();
-                this.loadStatuses();
+                this.showToast(`Profile "${profileName}" deleted successfully`, 'success');
+                // Refresh both profiles and statuses
+                await Promise.all([
+                    this.loadProfiles(),
+                    this.loadStatuses()
+                ]);
             } else {
-                this.showToast('Failed to delete profile: ' + (data.error || 'Unknown error'), 'error');
+                this.showToast(`Failed to delete profile "${profileName}": ${data.error || 'Unknown error'}`, 'error');
             }
         } catch (error) {
-            this.showToast('Error deleting profile: ' + error.message, 'error');
+            this.showToast(`Error deleting profile "${profileName}": ${error.message}`, 'error');
         } finally {
             this.hideLoading();
         }
@@ -2068,6 +2077,11 @@ class SyncProfileApp {
             this.showToast('Error: No profile ID provided', 'error');
             return;
         }
+
+        // Get profile name for better toast messages
+        const profileName = this.statuses[profileId]?.profile_name || 
+                           this.users?.find(u => u.id === profileId)?.name || 
+                           profileId;
 
         try {
             this.showLoading();
@@ -2081,25 +2095,18 @@ class SyncProfileApp {
             const result = await response.json();
             
             if (response.ok) {
-                this.showToast('Sync started successfully', 'success');
-                // Update the specific profile status
-                if (result.data) {
-                    this.statuses[profileId] = {
-                        ...result.data,
-                        profile_id: profileId,
-                        profile_name: this.statuses[profileId]?.profile_name || profileId
-                    };
-                    this.renderStatuses();
-                } else {
-                    // If no data in response, refresh all statuses
-                    await this.loadStatuses();
-                }
+                this.showToast(`Sync started for profile "${profileName}"`, 'success');
+                // Refresh both profiles and statuses to get latest data
+                await Promise.all([
+                    this.loadProfiles(),
+                    this.loadStatuses()
+                ]);
             } else {
                 throw new Error(result.error || 'Failed to start sync');
             }
         } catch (error) {
             console.error('Error starting sync:', error);
-            this.showToast(`Error: ${error.message}`, 'error');
+            this.showToast(`Failed to start sync for "${profileName}": ${error.message}`, 'error');
             
             // Update UI to show error state
             if (profileId && this.statuses[profileId]) {
@@ -2113,15 +2120,17 @@ class SyncProfileApp {
     }
 
     async cancelSync(profileId) {
-        if (!confirm('Are you sure you want to cancel the sync?')) {
-            return;
-        }
-
+        // No confirmation needed - this is a normal operation
         if (!profileId) {
             console.error('No profile ID provided for cancel');
             this.showToast('Error: No profile ID provided', 'error');
             return;
         }
+
+        // Get profile name for better toast messages
+        const profileName = this.statuses[profileId]?.profile_name || 
+                           this.users?.find(u => u.id === profileId)?.name || 
+                           profileId;
 
         try {
             this.showLoading();
@@ -2132,26 +2141,18 @@ class SyncProfileApp {
             const result = await response.json();
             
             if (response.ok) {
-                this.showToast('Sync cancelled', 'info');
-                // Update the specific profile status
-                if (result.data) {
-                    this.statuses[profileId] = {
-                        ...result.data,
-                        profile_id: profileId,
-                        profile_name: this.statuses[profileId]?.profile_name || profileId,
-                        status: 'cancelled'
-                    };
-                    this.renderStatuses();
-                } else {
-                    // If no data in response, refresh all statuses
-                    await this.loadStatuses();
-                }
+                this.showToast(`Sync cancelled for profile "${profileName}"`, 'info');
+                // Refresh both profiles and statuses to get latest data
+                await Promise.all([
+                    this.loadProfiles(),
+                    this.loadStatuses()
+                ]);
             } else {
                 throw new Error(result.error || 'Failed to cancel sync');
             }
         } catch (error) {
             console.error('Error cancelling sync:', error);
-            this.showToast(`Error: ${error.message}`, 'error');
+            this.showToast(`Failed to cancel sync for "${profileName}": ${error.message}`, 'error');
             
             // Update UI to show error state
             if (profileId && this.statuses[profileId]) {
